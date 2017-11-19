@@ -12,15 +12,15 @@ import json
 
 
 
-datapath = "/data1/amazon/productGraph/categoryFiles/ratings_Automotive.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv"#"/data1/googlelocal/reviews.clean.json"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
-save_filename = "data/amazon_automotive/data_tables_split_80_10_10_filter5"
+datapath = "/data1/googlelocal/googlelocal_ratings_timestamps.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv"#"/data1/googlelocal/reviews.clean.json"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
+save_filename = "data/google_local/data_tables_split_80_10_10_filter0"
 header = False
 
 split_ratio = [0.80,0.1,0.1]
 n = 5
-min_num_ratings = 5
+min_num_ratings = 0
 
-
+print("Loading raw data from ", datapath)
 if header:
 	raw_data = pd.read_csv(datapath)
 else:
@@ -73,11 +73,15 @@ def build_user_item_dict(data, user_id_dict, item_id_dict):
 	return user_item_orders
 
 def sort_and_rank(item_timestamp_list):
-	sorted_item_timestamp_list = sorted(item_timestamp_list, key=lambda t: int(t[1]))
+	sorted_item_timestamp_list = sorted(item_timestamp_list, key=lambda t: int(float(t[1])))
 	sorted_item_list = [x[0] for i,x in enumerate(sorted_item_timestamp_list)]
 	return sorted_item_list
 
-filtered_data = remove_underrepresented(raw_data, min_num_ratings)
+if min_num_ratings>0:
+	print("Filtering data")
+	filtered_data = remove_underrepresented(raw_data, min_num_ratings)
+else:
+	filtered_data = raw_data
 	
 print("Building user dict")
 user_id_dict = generate_id_dict(filtered_data, "userId")
@@ -126,10 +130,10 @@ def gen_nback_table(data, n):
 					cur_row.append(None)
 			cur_row.append(num_prev) #Additional 
 			data_table.append(cur_row)
-	pandas_data = pd.DataFrame(data_table)
-	colnames = ["userId", "nextItemId"]
-	colnames.extend(["n_minus_"+str(i)+"_ItemID" for i in range(1,n+1)])
-	colnames.append("num_prev")
+	#pandas_data = pd.DataFrame(data_table)
+	#colnames = ["userId", "nextItemId"]
+	#colnames.extend(["n_minus_"+str(i)+"_ItemID" for i in range(1,n+1)])
+	#colnames.append("num_prev")
 	#pandas_data.columns = colnames
 	#return pandas_data
 	return data_table

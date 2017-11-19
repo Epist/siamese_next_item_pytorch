@@ -9,7 +9,7 @@ from torch.nn import functional as F
 import torch.nn.init as init
 
 class SiameseRecNet(torch.nn.Module):
-	def __init__(self, num_users, num_items, num_previous_items, num_hidden_layers, num_hidden_units, embedding_size, activation_type, dropout_prob):
+	def __init__(self, num_users, num_items, num_previous_items, num_hidden_layers, num_hidden_units, embedding_size, activation_type, dropout_prob, use_masking):
 		super(SiameseRecNet, self).__init__()
 
 		self.num_items = num_items
@@ -21,6 +21,7 @@ class SiameseRecNet(torch.nn.Module):
 		self.input_dim = num_users+num_items*(num_previous_items+1)
 		self.activation_type = activation_type
 		self.dropout_prob = dropout_prob
+		self.use_masking = use_masking
 
 		self.next_item_embedding = torch.nn.Embedding(self.num_items+1, self.embedding_size) #All items share an embedding
 		init.xavier_uniform(self.next_item_embedding.weight)
@@ -74,12 +75,23 @@ class SiameseRecNet(torch.nn.Module):
 		left_embeddings += user_input_embedding
 		right_embeddings += user_input_embedding
 
-		prev_item_inputs = input_list[3:]
+		prev_item_inputs = input_list[3:self.num_previous_items+3]
+		if self.use_masking:
+			prev_item_masks = input_list[self.num_previous_items+3:]
 		for i, cur_prev_item_input in enumerate(prev_item_inputs): #Previous items
 			#if torch.lt(cur_prev_item_input.data, torch.LongTensor(self.num_items).cuda()):
-			cur_prev_item_input_embedding = self.prev_item_embeddings[i](cur_prev_item_input)
-			left_embeddings += cur_prev_item_input_embedding
-			right_embeddings += cur_prev_item_input_embedding
+			if self.use_masking:
+				cur_prev_item_input_embedding = self.prev_item_embeddings[i](cur_prev_item_input).t()
+				cur_mask = prev_item_masks[i]
+				masked_embedding = cur_prev_item_input_embedding.t() * cur_mask.expand_as(cur_prev_item_input_embedding).t()
+				#masked_embedding = masked_embedding.t()
+				left_embeddings += masked_embedding
+				right_embeddings += masked_embedding
+			else:
+				cur_prev_item_input_embedding = self.prev_item_embeddings[i](cur_prev_item_input)
+				left_embeddings += cur_prev_item_input_embedding
+				right_embeddings += cur_prev_item_input_embedding
+
 
 		#left_embeddings.append(self.user_embedding(left_inputs[num_previous_items])) #User
 		#right_embeddings.append(self.user_embedding(right_inputs[num_previous_items]))

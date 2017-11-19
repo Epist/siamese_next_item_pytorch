@@ -8,6 +8,8 @@ Use Python 3
 from data_reader_torch_tables import data_reader
 from model_torch import SiameseRecNet
 from model_torch_shared_embeddings import SiameseRecNet as SiameseRecNet_shared
+from model_torch_cascade import SiameseRecNet as SiameseRecNet_cascade
+from dataset_params import get_dataset_fn
 import pandas as pd
 import numpy as np
 import datetime
@@ -18,8 +20,13 @@ import math
 #Parameters:
 
 #Dataset parameters 
-dataset = "beeradvocate" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive
-subset_size = None
+dataset = "amazon_automotive" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
+train_valid_test = [80,10,10]
+filter_min = 5
+#subset_size = 0
+train_subset_size = 0
+valid_subset_size = 0
+test_subset_size = 0
 
 #Training parameters
 max_epochs = 100
@@ -36,40 +43,34 @@ model_save_path = "models/"
 model_loss = 'mse'
 optimizer_type = 'rmsprop'
 activation_type = 'tanh'
-use_shared_embedding_model = True
+model_type = "shared" # "shared", "independent", "cascade"
 l2_regularization = 0
 dropout_prob = 0.5
+use_masking = True #Missing data masking (The laternative is to train a dummy embedding for absent datapoints)
 
-model_save_name = "next_item_prediction_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(use_shared_embedding_model) + "shared_" + dataset
+model_save_name = "next_item_prediction_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subsetSizes_" + model_type + "_" + dataset
 
 print(model_save_name)
 
-
-#Set dataset params
-if dataset == "movielens20m":
-	data_path = "./data/movielens/"#'/data1/movielens/ml-20m'
-elif dataset == "amazon_videoGames":
-	data_path = "./data/amazon_videogames/data_tables_split_80_10_10"
-elif dataset == "ml1m":
-	data_path = "./data/ml1m/data_tables_split_85_5_10"
-elif dataset == "beeradvocate":
-	data_path = "./data/beeradvocate/data_tables_split_80_10_10"
-elif dataset == "amazon_automotive":
-	data_path = "./data/amazon_automotive/data_tables_split_80_10_10"
-elif dataset == "amazon_clothing":
-	data_path = "./data/amazon_clothing/data_tables_split_80_10_10"
+dataset_params = {"dataset":dataset, "train_valid_test":train_valid_test, "filter_min":filter_min}
+data_path = get_dataset_fn(dataset_params)
 
 model_save_name += "_" + dataset + "_"
 modelRunIdentifier = datetime.datetime.now().strftime("%I_%M%p_%B_%d_%Y")
 model_save_name += modelRunIdentifier #Append a unique identifier to the filename
 
 print("Loading data for " + dataset)
-siamese_data_reader = data_reader(data_path)
+siamese_data_reader = data_reader(data_path, train_subset_size, valid_subset_size, test_subset_size)
 
-if use_shared_embedding_model:
-	m = SiameseRecNet_shared(siamese_data_reader.num_users, siamese_data_reader.num_items, num_previous_items, numlayers, num_hidden_units, embedding_size, activation_type, dropout_prob)
-else:
-	m = SiameseRecNet(siamese_data_reader.num_users, siamese_data_reader.num_items, num_previous_items, numlayers, num_hidden_units, embedding_size, activation_type, dropout_prob)
+if model_type == "shared":
+	model_type = SiameseRecNet_shared
+elif model_type == "independent":
+	model_type = SiameseRecNet
+elif model_type == "cascade":
+	model_type = SiameseRecNet_cascade
+
+m = model_type(siamese_data_reader.num_users, siamese_data_reader.num_items, num_previous_items, numlayers, num_hidden_units, embedding_size, activation_type, dropout_prob, use_masking)
+
 m.cuda()
 criterion = torch.nn.MSELoss()
 mae_loss = torch.nn.L1Loss()
@@ -86,11 +87,11 @@ best_epoch = 0
 train_history = []
 val_history = []
 best_model = None
-train_gen = siamese_data_reader.data_gen(batch_size, "train", num_previous_items, subset_size=subset_size)
-valid_gen = siamese_data_reader.data_gen(batch_size, "valid", num_previous_items, subset_size=subset_size)
+train_gen = siamese_data_reader.data_gen(batch_size, "train", num_previous_items, use_masking)
+valid_gen = siamese_data_reader.data_gen(batch_size, "valid", num_previous_items, use_masking)
 
-train_epoch_length = int(math.ceil(siamese_data_reader.num_train_ratings/batch_size))
-val_epoch_length = int(math.ceil(siamese_data_reader.num_valid_ratings/batch_size))
+train_epoch_length = int(math.ceil(siamese_data_reader.num_train_ratings_subset/batch_size))
+val_epoch_length = int(math.ceil(siamese_data_reader.num_valid_ratings_subset/batch_size))
 
 for i in range(max_epochs):
 	print("\nStarting epoch ", i, " with minibatch size ", batch_size)	
@@ -101,7 +102,7 @@ for i in range(max_epochs):
 	cum_mae_train = 0
 	for j in range(train_epoch_length):
 		inputs, targets = next(train_gen)
-		preds = m(inputs) #Find a way to make prettier
+		preds = m(inputs)
 
 		loss = criterion(preds, targets)
 		mae = mae_loss(preds, targets)
@@ -174,8 +175,8 @@ except:
 
 print("Testing model from epoch: ", best_epoch)
 
-test_gen = siamese_data_reader.data_gen(batch_size, "test", num_previous_items, subset_size=subset_size)
-test_epoch_length = int(math.ceil(siamese_data_reader.num_test_ratings/batch_size))
+test_gen = siamese_data_reader.data_gen(batch_size, "test", num_previous_items, use_masking)
+test_epoch_length = int(math.ceil(siamese_data_reader.num_test_ratings_subset/batch_size))
 
 cumulative_loss_epoch_test = 0
 cum_mae_test = 0

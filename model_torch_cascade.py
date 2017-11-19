@@ -20,6 +20,8 @@ class SiameseRecNet(torch.nn.Module):
 		self.embedding_size = embedding_size
 		self.dropout_prob = dropout_prob
 		self.use_masking = use_masking
+		if use_masking:
+			raise(Exception("Masking not yet implemented for cascade model"))
 
 		self.item_embedding = torch.nn.Embedding(self.num_items+1, self.embedding_size) #All items share an embedding
 		self.user_embedding = torch.nn.Embedding(self.num_users, self.embedding_size)
@@ -30,11 +32,13 @@ class SiameseRecNet(torch.nn.Module):
 		init.xavier_uniform(self.user_input_layer.weight)
 		self.next_item_input_layer = nn.Linear(self.embedding_size, self.num_hidden)
 		init.xavier_uniform(self.next_item_input_layer.weight)
-		self.prev_items_hidden_layers = []
+		self.cascade_layer = nn.Linear(self.embedding_size, self.num_hidden)
+		init.xavier_uniform(self.cascade_layer.weight)
+
+		self.prev_decay_biases = []
 		for i in range(num_previous_items):
-			hidden = nn.Linear(self.embedding_size, self.num_hidden).cuda()
-			self.prev_items_hidden_layers.append(hidden)
-			init.xavier_uniform(hidden.weight)
+			bias = torch.autograd.Variable(torch.FloatTensor(1).zero_(), requires_grad=True).cuda()
+			self.prev_decay_biases.append(bias)
 
 		if activation_type == "tanh":
 			self.post_embedding_nonlinearity = nn.Tanh()
@@ -83,21 +87,15 @@ class SiameseRecNet(torch.nn.Module):
 		left_embeddings += user_input_embedding
 		right_embeddings += user_input_embedding
 
-		prev_item_inputs = input_list[3:self.num_previous_items+3]
-		if self.use_masking:
-			prev_item_masks = input_list[self.num_previous_items+3:]
-		for i, cur_prev_item_input in enumerate(prev_item_inputs): #Previous items
-			hidden = self.prev_items_hidden_layers[i]
-			cur_prev_item_input_embedding = self.item_embedding(cur_prev_item_input)
-			post_embedding = hidden(self.post_embedding_nonlinearity(DO(cur_prev_item_input_embedding))).t()
-			if self.use_masking:
-				cur_mask = prev_item_masks[i]
-				masked_embedding = post_embedding.t() * cur_mask.expand_as(post_embedding).t()
-				left_embeddings += masked_embedding
-				right_embeddings += masked_embedding
+		prev_item_embeddings = input_list[3:]
+		for i, cur_prev_item_input in enumerate(reversed(prev_item_embeddings)): #Previous items
+			bias = self.prev_decay_biases[i]
+			if i == 0:
+				cascade_activation = self.cascade_layer(self.post_embedding_nonlinearity(bias + DO(self.item_embedding(cur_prev_item_input))))
 			else:
-				left_embeddings += post_embedding
-				right_embeddings += post_embedding
+				cascade_activation = self.cascade_layer(self.post_embedding_nonlinearity(cascade_activation + bias + DO(self.item_embedding(cur_prev_item_input))))
+		left_embeddings += cascade_activation
+		right_embeddings += cascade_activation
 
 		#left_embeddings.append(self.user_embedding(left_inputs[num_previous_items])) #User
 		#right_embeddings.append(self.user_embedding(right_inputs[num_previous_items]))

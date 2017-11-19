@@ -20,7 +20,7 @@ from torch.autograd import Variable
 import pandas as pd
 
 class data_reader(object):
-	def __init__(self, filename):
+	def __init__(self, filename, train_subset_size, valid_subset_size, test_subset_size):
 		self.data_fn_root = filename
 		self.metadata_fn = self.data_fn_root + "_metadata.json"
 		self.train_fn = self.data_fn_root + "_train.json"
@@ -41,6 +41,16 @@ class data_reader(object):
 		self.num_valid_ratings = len(self.valid_data)
 		self.num_test_ratings = len(self.test_data)
 
+		self.train_subset_size = train_subset_size
+		self.valid_subset_size = valid_subset_size
+		self.test_subset_size = test_subset_size
+		self.num_train_ratings_subset = self.get_subset_size(self.train_data, train_subset_size)
+		self.num_valid_ratings_subset = self.get_subset_size(self.valid_data, valid_subset_size)
+		self.num_test_ratings_subset = self.get_subset_size(self.test_data, test_subset_size)
+		#self.num_train_ratings_subset = self.num_train_ratings
+		#self.num_valid_ratings_subset = self.num_valid_ratings
+		#self.num_test_ratings_subset = self.num_test_ratings
+
 
 	def load_data(self, filename):
 		# Load dataset and decoding dictionaries
@@ -60,9 +70,17 @@ class data_reader(object):
 		for i, row in enumerate(data_table):
 			if row[-1]>=n:
 				subset_indices.append(i)
+		print("Using datapoints with at least ", n, " previous item(s). This leaves ", len(subset_indices), "/", len(data_table), " datapoints.")
 		return subset_indices
 
-	def data_gen(self, batch_size, train_valid_test, num_previous_items, subset_size=False):
+	def get_subset_size(self, data_table, n):
+		subset_size = 0
+		for i, row in enumerate(data_table):
+			if row[-1]>=n:
+				subset_size += 1
+		return subset_size
+
+	def data_gen(self, batch_size, train_valid_test, num_previous_items, use_masking):
 		# A generator for batches for the model.
 		# A datapoint has the format [ith_item_purchased, i-1th_item_purchased, ..., user, candidate next item 1, candidate next item 2]
 		# Where one of the candidate next items is the real next item that the user purchased and the other is an item drawn randomly from the set of all items \ the real next item
@@ -72,10 +90,13 @@ class data_reader(object):
 		
 		if train_valid_test == "train":
 			data_table = self.train_data
+			subset_size = self.train_subset_size
 		elif train_valid_test == "valid":
 			data_table = self.valid_data
+			subset_size = self.valid_subset_size
 		elif train_valid_test == "test":
 			data_table = self.test_data
+			subset_size = self.test_subset_size
 		num_ratings = len(data_table)
 		print(train_valid_test, " dataset has " , num_ratings, " ratings")
 		#items_list = [list(self.item_id_dict.keys())
@@ -102,8 +123,10 @@ class data_reader(object):
 
 				batch_user_inputs = []
 				batch_prev_item_inputs_list = []
+				batch_prev_item_masks_list = []
 				for i in range(num_previous_items):
 					batch_prev_item_inputs_list.append([])
+					batch_prev_item_masks_list.append([])
 				batch_left_cand_inputs = []
 				batch_right_cand_inputs = []
 				
@@ -128,13 +151,21 @@ class data_reader(object):
 					next_item = int(cur_row[1])
 
 					prev_items_infos = []
+					prev_item_observed_mask = []
 					for j in range(num_previous_items): #The order here is n-1th, n-2th, n-3th, etc.
 						if cur_row[j+2] is not None:
 							cur_prev_item = int(cur_row[j+2])
+							cur_mask_val = 1
 						else:
 							cur_prev_item = self.num_items #special number representing no input
+							cur_mask_val = 0
 						prev_items_infos.append(cur_prev_item)
-
+						prev_item_observed_mask.append(cur_mask_val)
+					"""
+					for item in cur_row[2:]:
+						cur_prev_item = int(item)
+						prev_items_infos.append(cur_prev_item)
+					"""
 
 					#Pick a random item for the contrast proportionally to the frequency of purchase (to speed up training since more frequent items are more difficult)
 					while True: #To make sure it is not the identical item...
@@ -168,6 +199,8 @@ class data_reader(object):
 					#print("\n\n")
 					#print(prev_items_infos)
 					[batch_prev_item_inputs_list[index].append(x) for index, x in enumerate(prev_items_infos)]
+					if use_masking:
+						[batch_prev_item_masks_list[index].append(x) for index, x in enumerate(prev_item_observed_mask)]
 					batch_left_cand_inputs.append(left_item_info)
 					batch_right_cand_inputs.append(right_item_info)
 
@@ -178,8 +211,10 @@ class data_reader(object):
 				left_cand_item_inputs_var = Variable(torch.LongTensor(batch_left_cand_inputs)).cuda()
 				right_cand_item_inputs_var = Variable(torch.LongTensor(batch_right_cand_inputs)).cuda()
 				prev_items_inputs_vars = [Variable(torch.LongTensor(prev_item_input)).cuda() for prev_item_input in batch_prev_item_inputs_list]
-				#print("Inputs shape ", targets.shape)
 				targets_var = Variable(torch.FloatTensor(targets), requires_grad=False).cuda()
-				#print("Inputs var shape ", user_inputs_var.size())
-				yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]
+				if use_masking:
+					prev_items_masks_vars = [Variable(torch.FloatTensor(prev_item_mask)).cuda() for prev_item_mask in batch_prev_item_masks_list]
+					yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars + prev_items_masks_vars, targets_var]
+				else:
+					yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]
 
