@@ -89,13 +89,14 @@ class SiameseRecNet(torch.nn.Module):
 		for i, cur_prev_item_input in enumerate(prev_item_inputs): #Previous items
 			hidden = self.prev_items_hidden_layers[i]
 			cur_prev_item_input_embedding = self.item_embedding(cur_prev_item_input)
-			post_embedding = hidden(self.post_embedding_nonlinearity(DO(cur_prev_item_input_embedding))).t()
 			if self.use_masking:
+				post_embedding = hidden(self.post_embedding_nonlinearity(DO(cur_prev_item_input_embedding))).t()
 				cur_mask = prev_item_masks[i]
 				masked_embedding = post_embedding.t() * cur_mask.expand_as(post_embedding).t()
 				left_embeddings += masked_embedding
 				right_embeddings += masked_embedding
 			else:
+				post_embedding = hidden(self.post_embedding_nonlinearity(DO(cur_prev_item_input_embedding)))
 				left_embeddings += post_embedding
 				right_embeddings += post_embedding
 

@@ -22,23 +22,24 @@ import math
 #Dataset parameters 
 dataset = "amazon_automotive" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 train_valid_test = [80,10,10]
-filter_min = 5
+filter_min = None
 #subset_size = 0
-train_subset_size = 0
-valid_subset_size = 0
-test_subset_size = 0
+train_subset_size = 1
+valid_subset_size = 1
+test_subset_size = 1
 
 #Training parameters
 max_epochs = 100
 batch_size = 64
 patience = 5
 early_stopping_metric = "mae"
+use_gpu = True
 
 #Model parameters
 numlayers = 2
 num_hidden_units = 128
-embedding_size = 128
-num_previous_items = 2
+embedding_size = 64
+num_previous_items = 1
 model_save_path = "models/"
 model_loss = 'mse'
 optimizer_type = 'rmsprop'
@@ -46,9 +47,9 @@ activation_type = 'tanh'
 model_type = "shared" # "shared", "independent", "cascade"
 l2_regularization = 0
 dropout_prob = 0.5
-use_masking = True #Missing data masking (The laternative is to train a dummy embedding for absent datapoints)
+use_masking = False #Missing data masking (The laternative is to train a dummy embedding for absent datapoints)
 
-model_save_name = "next_item_prediction_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subsetSizes_" + model_type + "_" + dataset
+model_save_name = "next_item_prediction_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(embedding_size)+"emb_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subsetSizes_" + model_type + "_" + dataset
 
 print(model_save_name)
 
@@ -71,7 +72,8 @@ elif model_type == "cascade":
 
 m = model_type(siamese_data_reader.num_users, siamese_data_reader.num_items, num_previous_items, numlayers, num_hidden_units, embedding_size, activation_type, dropout_prob, use_masking)
 
-m.cuda()
+if use_gpu:
+	m.cuda()
 criterion = torch.nn.MSELoss()
 mae_loss = torch.nn.L1Loss()
 
@@ -87,8 +89,8 @@ best_epoch = 0
 train_history = []
 val_history = []
 best_model = None
-train_gen = siamese_data_reader.data_gen(batch_size, "train", num_previous_items, use_masking)
-valid_gen = siamese_data_reader.data_gen(batch_size, "valid", num_previous_items, use_masking)
+train_gen = siamese_data_reader.data_gen(batch_size, "train", num_previous_items, use_masking, use_gpu)
+valid_gen = siamese_data_reader.data_gen(batch_size, "valid", num_previous_items, use_masking, use_gpu)
 
 train_epoch_length = int(math.ceil(siamese_data_reader.num_train_ratings_subset/batch_size))
 val_epoch_length = int(math.ceil(siamese_data_reader.num_valid_ratings_subset/batch_size))
@@ -175,7 +177,7 @@ except:
 
 print("Testing model from epoch: ", best_epoch)
 
-test_gen = siamese_data_reader.data_gen(batch_size, "test", num_previous_items, use_masking)
+test_gen = siamese_data_reader.data_gen(batch_size, "test", num_previous_items, use_masking, use_gpu)
 test_epoch_length = int(math.ceil(siamese_data_reader.num_test_ratings_subset/batch_size))
 
 cumulative_loss_epoch_test = 0

@@ -80,7 +80,7 @@ class data_reader(object):
 				subset_size += 1
 		return subset_size
 
-	def data_gen(self, batch_size, train_valid_test, num_previous_items, use_masking):
+	def data_gen(self, batch_size, train_valid_test, num_previous_items, use_masking, use_gpu):
 		# A generator for batches for the model.
 		# A datapoint has the format [ith_item_purchased, i-1th_item_purchased, ..., user, candidate next item 1, candidate next item 2]
 		# Where one of the candidate next items is the real next item that the user purchased and the other is an item drawn randomly from the set of all items \ the real next item
@@ -207,14 +207,26 @@ class data_reader(object):
 					cur_position += 1
 
 
-				user_inputs_var = Variable(torch.LongTensor(batch_user_inputs)).cuda()
-				left_cand_item_inputs_var = Variable(torch.LongTensor(batch_left_cand_inputs)).cuda()
-				right_cand_item_inputs_var = Variable(torch.LongTensor(batch_right_cand_inputs)).cuda()
-				prev_items_inputs_vars = [Variable(torch.LongTensor(prev_item_input)).cuda() for prev_item_input in batch_prev_item_inputs_list]
-				targets_var = Variable(torch.FloatTensor(targets), requires_grad=False).cuda()
-				if use_masking:
-					prev_items_masks_vars = [Variable(torch.FloatTensor(prev_item_mask)).cuda() for prev_item_mask in batch_prev_item_masks_list]
-					yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars + prev_items_masks_vars, targets_var]
+				if use_gpu:
+					user_inputs_var = Variable(torch.LongTensor(batch_user_inputs)).cuda()
+					left_cand_item_inputs_var = Variable(torch.LongTensor(batch_left_cand_inputs)).cuda()
+					right_cand_item_inputs_var = Variable(torch.LongTensor(batch_right_cand_inputs)).cuda()
+					prev_items_inputs_vars = [Variable(torch.LongTensor(prev_item_input)).cuda() for prev_item_input in batch_prev_item_inputs_list]
+					targets_var = Variable(torch.FloatTensor(targets), requires_grad=False).cuda()
+					if use_masking:
+						prev_items_masks_vars = [Variable(torch.FloatTensor(prev_item_mask)).cuda() for prev_item_mask in batch_prev_item_masks_list]
+						yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars + prev_items_masks_vars, targets_var]
+					else:
+						yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]
 				else:
-					yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]
+					user_inputs_var = Variable(torch.LongTensor(batch_user_inputs))
+					left_cand_item_inputs_var = Variable(torch.LongTensor(batch_left_cand_inputs))
+					right_cand_item_inputs_var = Variable(torch.LongTensor(batch_right_cand_inputs))
+					prev_items_inputs_vars = [Variable(torch.LongTensor(prev_item_input)) for prev_item_input in batch_prev_item_inputs_list]
+					targets_var = Variable(torch.FloatTensor(targets), requires_grad=False)
+					if use_masking:
+						prev_items_masks_vars = [Variable(torch.FloatTensor(prev_item_mask)) for prev_item_mask in batch_prev_item_masks_list]
+						yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars + prev_items_masks_vars, targets_var]
+					else:
+						yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]
 
