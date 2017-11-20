@@ -9,7 +9,7 @@ from torch.nn import functional as F
 import torch.nn.init as init
 
 class SiameseRecNet(torch.nn.Module):
-	def __init__(self, num_users, num_items, num_previous_items, num_hidden_layers, num_hidden_units, embedding_size, activation_type, dropout_prob, use_masking):
+	def __init__(self, num_users, num_items, num_previous_items, num_hidden_layers, num_hidden_units, embedding_size, activation_type, dropout_prob, use_masking, use_gpu):
 		super(SiameseRecNet, self).__init__()
 
 		self.num_items = num_items
@@ -22,12 +22,16 @@ class SiameseRecNet(torch.nn.Module):
 		self.activation_type = activation_type
 		self.dropout_prob = dropout_prob
 		self.use_masking = use_masking
+		self.use_gpu = use_gpu
 
 		self.next_item_embedding = torch.nn.Embedding(self.num_items+1, self.embedding_size) #All items share an embedding
 		init.xavier_uniform(self.next_item_embedding.weight)
 		self.prev_item_embeddings = []
 		for i in range(num_previous_items):
-			self.prev_item_embeddings.append(torch.nn.Embedding(self.num_items+1, self.embedding_size).cuda())
+			if self.use_gpu:
+				self.prev_item_embeddings.append(torch.nn.Embedding(self.num_items+1, self.embedding_size).cuda())
+			else:
+				self.prev_item_embeddings.append(torch.nn.Embedding(self.num_items+1, self.embedding_size))
 			init.xavier_uniform(self.prev_item_embeddings[i].weight)
 		self.user_embedding = torch.nn.Embedding(self.num_users, self.embedding_size)
 		init.xavier_uniform(self.user_embedding.weight)

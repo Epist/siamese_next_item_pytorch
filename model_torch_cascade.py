@@ -7,7 +7,7 @@ from torch.nn import functional as F
 import torch.nn.init as init
 
 class SiameseRecNet(torch.nn.Module):
-	def __init__(self, num_users, num_items, num_previous_items, num_hidden_layers, num_hidden_units, embedding_size, activation_type, dropout_prob, use_masking):
+	def __init__(self, num_users, num_items, num_previous_items, num_hidden_layers, num_hidden_units, embedding_size, activation_type, dropout_prob, use_masking, use_gpu):
 		super(SiameseRecNet, self).__init__()
 
 		self.num_items = num_items
@@ -22,6 +22,7 @@ class SiameseRecNet(torch.nn.Module):
 		self.use_masking = use_masking
 		if use_masking:
 			raise(Exception("Masking not yet implemented for cascade model"))
+		self.use_gpu = use_gpu
 
 		self.item_embedding = torch.nn.Embedding(self.num_items+1, self.embedding_size) #All items share an embedding
 		self.user_embedding = torch.nn.Embedding(self.num_users, self.embedding_size)
@@ -37,7 +38,10 @@ class SiameseRecNet(torch.nn.Module):
 
 		self.prev_decay_biases = []
 		for i in range(num_previous_items):
-			bias = torch.autograd.Variable(torch.FloatTensor(1).zero_(), requires_grad=True).cuda()
+			if self.use_gpu:
+				bias = torch.autograd.Variable(torch.FloatTensor(1).zero_(), requires_grad=True).cuda()
+			else:
+				bias = torch.autograd.Variable(torch.FloatTensor(1).zero_(), requires_grad=True)
 			self.prev_decay_biases.append(bias)
 
 		if activation_type == "tanh":
