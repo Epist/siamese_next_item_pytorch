@@ -20,9 +20,9 @@ import math
 #Parameters:
 
 #Dataset parameters 
-dataset = "googlelocal" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
+dataset = "amazon_automotive" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 train_valid_test = [80,10,10]
-filter_min = 0
+filter_min = None
 #subset_size = 0
 train_subset_size = 1
 valid_subset_size = 1
@@ -30,19 +30,19 @@ test_subset_size = 1
 
 #Training parameters
 max_epochs = 100
-batch_size = 64
+batch_size = 16
 patience = 5
 early_stopping_metric = "mae"
-use_gpu = False
+use_gpu = True
 
 #Model parameters
 numlayers = 2
 num_hidden_units = 128
-embedding_size = 128
+embedding_size = 64
 num_previous_items = 1
 model_save_path = "models/"
 model_loss = 'mse'
-optimizer_type = 'rmsprop'
+optimizer_type = 'adagrad'
 activation_type = 'tanh'
 model_type = "shared" # "shared", "independent", "cascade"
 l2_regularization = 0
@@ -51,14 +51,14 @@ use_masking = False #Missing data masking (The laternative is to train a dummy e
 
 model_save_name = "next_item_prediction_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(embedding_size)+"emb_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subsetSizes_" + model_type + "_" + dataset
 
-print(model_save_name)
-
 dataset_params = {"dataset":dataset, "train_valid_test":train_valid_test, "filter_min":filter_min}
 data_path = get_dataset_fn(dataset_params)
 
 model_save_name += "_" + dataset + "_"
 modelRunIdentifier = datetime.datetime.now().strftime("%I_%M%p_%B_%d_%Y")
 model_save_name += modelRunIdentifier #Append a unique identifier to the filename
+
+print("Model will be saved as: ", model_save_name)
 
 print("Loading data for " + dataset)
 siamese_data_reader = data_reader(data_path, train_subset_size, valid_subset_size, test_subset_size)
@@ -81,6 +81,8 @@ if optimizer_type == "adam":
 	optimizer = torch.optim.Adam(m.parameters(), weight_decay=l2_regularization)
 elif optimizer_type == "rmsprop":
 	optimizer = torch.optim.RMSprop(m.parameters(), weight_decay=l2_regularization)
+elif optimizer_type == "adagrad":
+	optimizer = torch.optim.Adagrad(m.parameters(), weight_decay=l2_regularization)
 else:
 	raise(notImplementedError())
 
@@ -111,16 +113,18 @@ for i in range(max_epochs):
 		cumulative_loss_epoch_train += loss.data.cpu().numpy()[0]
 		cum_mae_train += mae.data.cpu().numpy()[0]
 		#print("Iteration: ", j, "      Loss: ", loss.data.numpy()[0], "      Average loss so far: ", cumulative_loss_epoch_train/(j+1), end='\033[K \r')
-		print("Batch: ", j+1, "/", train_epoch_length, "      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_train/(j+1)), end='\033[K \r')
+		if j%50==0: #Keeps the log sile size from exploding
+			print("Batch: ", j+1, "/", train_epoch_length, "      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_train/(j+1)), end='\033[K \r')
 
 		optimizer.zero_grad()
 		loss.backward()
 		optimizer.step()
 	train_loss = cumulative_loss_epoch_train/train_epoch_length
 	train_mae = cum_mae_train/train_epoch_length
+	train_auc = 1-(train_mae/2)
 	print("\nTrain loss for epoch ", i, " : ", train_loss)
-	print("Train AUC for epoch ", i, " : ", 1-(train_mae/2))
-	train_history.append(train_loss)
+	print("Train AUC for epoch ", i, " : ", train_auc)
+	train_history.append((train_loss,train_auc))
 
 	#Validate model
 	print("\nValidating model")
@@ -134,14 +138,16 @@ for i in range(max_epochs):
 		mae = mae_loss(preds, targets)
 		cumulative_loss_epoch_valid += loss.data.cpu().numpy()[0]
 		cum_mae_valid += mae.data.cpu().numpy()[0]
-		print("Batch: ", j+1, "/", val_epoch_length,"      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_valid/(j+1)), end='\033[K \r')
+		if j%50==0: #Keeps the log sile size from exploding
+			print("Batch: ", j+1, "/", val_epoch_length,"      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_valid/(j+1)), end='\033[K \r')
 	
 	#Early stopping code
 	val_loss = cumulative_loss_epoch_valid/val_epoch_length
 	val_mae = cum_mae_valid/val_epoch_length
+	val_auc = 1-(val_mae/2)
 	print("\nValidation loss for epoch ", i, " : ", val_loss)
-	print("Validation AUC for epoch ", i, " : ", 1-(val_mae/2))
-	val_history.append(val_loss)
+	print("Validation AUC for epoch ", i, " : ", val_auc)
+	val_history.append((val_loss,val_auc))
 	if early_stopping_metric == "loss":
 		val_metric = val_loss
 	elif early_stopping_metric == "mae":
@@ -160,6 +166,7 @@ for i in range(max_epochs):
 		print("Stopping early at epoch ", i)
 		print("Best epoch was ", best_epoch)
 		print("Val history: ", val_history)
+		torch.save(best_model, model_save_path+model_save_name+"_bestValidScore")
 		break
 	
 
@@ -192,7 +199,8 @@ for j in range(test_epoch_length):
 	print("Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_test/(j+1)), end='\033[K \r')
 
 test_mae = cum_mae_test/test_epoch_length
+test_auc = 1-(test_mae/2)
 print("\nTest loss: ", cumulative_loss_epoch_test/test_epoch_length)
-print("Test AUC: ", 1-(test_mae/2))
+print("Test AUC: ", test_auc)
 
 

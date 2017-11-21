@@ -13,12 +13,12 @@ import json
 
 
 datapath = "/data1/googlelocal/googlelocal_ratings_timestamps.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv"#"/data1/googlelocal/reviews.clean.json"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
-save_filename = "data/google_local/data_tables_split_80_10_10_filter0"
+save_filename = "data/google_local/data_tables_split_80_10_10_filter2"
 header = False
 
 split_ratio = [0.80,0.1,0.1]
 n = 5
-min_num_ratings = 0
+min_num_ratings = 2
 
 print("Loading raw data from ", datapath)
 if header:
