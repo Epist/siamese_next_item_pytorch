@@ -20,9 +20,9 @@ import math
 #Parameters:
 
 #Dataset parameters 
-dataset = "amazon_automotive" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
+dataset = "googlelocal" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 train_valid_test = [80,10,10]
-filter_min = None
+filter_min = 5
 #subset_size = 0
 train_subset_size = 1
 valid_subset_size = 1
@@ -30,15 +30,16 @@ test_subset_size = 1
 
 #Training parameters
 max_epochs = 100
-batch_size = 16
+batch_size = 32
 patience = 5
 early_stopping_metric = "mae"
 use_gpu = True
+learning_rate = 1e-2 #Default for adagrad is 1e-2
 
 #Model parameters
 numlayers = 2
-num_hidden_units = 128
-embedding_size = 64
+num_hidden_units = 64
+embedding_size = 32
 num_previous_items = 1
 model_save_path = "models/"
 model_loss = 'mse'
@@ -49,7 +50,7 @@ l2_regularization = 0
 dropout_prob = 0.5
 use_masking = False #Missing data masking (The laternative is to train a dummy embedding for absent datapoints)
 
-model_save_name = "next_item_prediction_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(embedding_size)+"emb_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subsetSizes_" + model_type + "_" + dataset
+model_save_name = "next_item_pred_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(embedding_size)+"emb_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subSizes_" + model_type
 
 dataset_params = {"dataset":dataset, "train_valid_test":train_valid_test, "filter_min":filter_min}
 data_path = get_dataset_fn(dataset_params)
@@ -78,11 +79,11 @@ criterion = torch.nn.MSELoss()
 mae_loss = torch.nn.L1Loss()
 
 if optimizer_type == "adam":
-	optimizer = torch.optim.Adam(m.parameters(), weight_decay=l2_regularization)
+	optimizer = torch.optim.Adam(m.parameters(), lr=learning_rate, weight_decay=l2_regularization)
 elif optimizer_type == "rmsprop":
-	optimizer = torch.optim.RMSprop(m.parameters(), weight_decay=l2_regularization)
+	optimizer = torch.optim.RMSprop(m.parameters(), lr=learning_rate, weight_decay=l2_regularization)
 elif optimizer_type == "adagrad":
-	optimizer = torch.optim.Adagrad(m.parameters(), weight_decay=l2_regularization)
+	optimizer = torch.optim.Adagrad(m.parameters(), lr=learning_rate, weight_decay=l2_regularization)
 else:
 	raise(notImplementedError())
 
@@ -114,7 +115,10 @@ for i in range(max_epochs):
 		cum_mae_train += mae.data.cpu().numpy()[0]
 		#print("Iteration: ", j, "      Loss: ", loss.data.numpy()[0], "      Average loss so far: ", cumulative_loss_epoch_train/(j+1), end='\033[K \r')
 		if j%50==0: #Keeps the log sile size from exploding
-			print("Batch: ", j+1, "/", train_epoch_length, "      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_train/(j+1)), end='\033[K \r')
+			try:
+				print("Batch: ", j+1, "/", train_epoch_length, "      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_train/(j+1)), end='\033[K \r', flush=True)
+			except:
+				print("Batch: ", j+1, "/", train_epoch_length, "      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_train/(j+1)), flush=True)
 
 		optimizer.zero_grad()
 		loss.backward()
@@ -139,8 +143,11 @@ for i in range(max_epochs):
 		cumulative_loss_epoch_valid += loss.data.cpu().numpy()[0]
 		cum_mae_valid += mae.data.cpu().numpy()[0]
 		if j%50==0: #Keeps the log sile size from exploding
-			print("Batch: ", j+1, "/", val_epoch_length,"      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_valid/(j+1)), end='\033[K \r')
-	
+			try:
+				print("Batch: ", j+1, "/", val_epoch_length,"      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_valid/(j+1)), end='\033[K \r', flush=True)
+			except:
+				print("Batch: ", j+1, "/", val_epoch_length,"      Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_valid/(j+1)), flush=True)
+
 	#Early stopping code
 	val_loss = cumulative_loss_epoch_valid/val_epoch_length
 	val_mae = cum_mae_valid/val_epoch_length
@@ -166,7 +173,13 @@ for i in range(max_epochs):
 		print("Stopping early at epoch ", i)
 		print("Best epoch was ", best_epoch)
 		print("Val history: ", val_history)
-		torch.save(best_model, model_save_path+model_save_name+"_bestValidScore")
+		try:
+			print("Saving best model")
+			best_model_fn = model_save_path+model_save_name+"_bestVal"
+			torch.save(best_model, best_model_fn)
+			print("Saved best model at: ", best_model_fn)
+		except:
+			print("Failed to save best model.")
 		break
 	
 
@@ -196,11 +209,14 @@ for j in range(test_epoch_length):
 	loss = criterion(preds, targets)
 	cumulative_loss_epoch_test += loss.data.cpu().numpy()[0]
 	cum_mae_test += mae.data.cpu().numpy()[0]
-	print("Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_test/(j+1)), end='\033[K \r')
+	try:
+		print("Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_test/(j+1)), end='\033[K \r', flush=True)
+	except:
+		print("Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_test/(j+1)), flush=True)
 
 test_mae = cum_mae_test/test_epoch_length
 test_auc = 1-(test_mae/2)
-print("\nTest loss: ", cumulative_loss_epoch_test/test_epoch_length)
-print("Test AUC: ", test_auc)
+print("\nTest loss: ", cumulative_loss_epoch_test/test_epoch_length, flush=True)
+print("Test AUC: ", test_auc, flush=True)
 
 
