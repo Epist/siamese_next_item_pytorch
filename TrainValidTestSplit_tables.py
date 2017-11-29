@@ -157,7 +157,7 @@ def gen_nback_table(data, n, use_overlap=False):
 	return data_table
 
 print("Generating train data table")
-train_table = gen_nback_table(train_dict, n, use_overlap=use_overlapping_intervals)
+train_table = gen_nback_table(train_dict, n, use_overlap=False) #Training data never has overlap
 print("Generating validation data table")
 valid_table = gen_nback_table(valid_dict, n, use_overlap=use_overlapping_intervals)
 print("Generating test data table")
