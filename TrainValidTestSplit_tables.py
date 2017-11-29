@@ -1,4 +1,5 @@
 #Generate n-back data tables for next item recommendation
+#Needs to be run with python 2
 
 
 #Also write a data reader class for sampling these and sendign them to the model
@@ -11,14 +12,20 @@ import numpy as np
 import json
 
 
-
-datapath = "/data1/amazon/productGraph/categoryFiles/ratings_Clothing_Shoes_and_Jewelry.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv" #"/data1/googlelocal/googlelocal_ratings_timestamps.csv"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
-save_filename = "data/amazon_clothing/data_tables_split_80_10_10_filter2"
+#Source data parameters
+datapath = "/data1/googlelocal/googlelocal_ratings_timestamps.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv" #"/data1/googlelocal/googlelocal_ratings_timestamps.csv"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
 header = False
 
-split_ratio = [0.80,0.1,0.1]
-n = 5
+#Dataset generation parameters
+save_filename = "data/googlelocal/data_tables_split_80_10_10_filter"
+split_ratio = [0.8,0.1,0.1]
+n = 5 #Number of previous items to include in each table entry (linearly increases the size of the table)
 min_num_ratings = 2
+use_overlapping_intervals = True
+
+save_filename += str(min_num_ratings)
+if use_overlapping_intervals:
+	save_filename += "_withoverlap"
 
 print("Loading raw data from ", datapath)
 if header:
@@ -92,7 +99,7 @@ print("Joining, sorting, and ranking")
 user_item_dict = build_user_item_dict(filtered_data, user_id_dict, item_id_dict)
 
 
-def split_by_userwise_percentage(user_item_dict, train_valid_test_split):
+def split_by_userwise_percentage(user_item_dict, train_valid_test_split, n, use_overlap=False):
 	train_percentage = train_valid_test_split[0]
 	valid_percentage = train_valid_test_split[1]
 	test_percentage = train_valid_test_split[2]
@@ -107,19 +114,30 @@ def split_by_userwise_percentage(user_item_dict, train_valid_test_split):
 		purchase_list = user_item_dict[user]
 		num_items = len(purchase_list)
 		train_dict[user] = purchase_list[0:int(np.ceil(train_percentage*num_items))]
-		valid_dict[user] = purchase_list[int(np.ceil(train_percentage*num_items)):int(np.ceil((train_percentage+valid_percentage)*num_items))]
-		test_dict[user] = purchase_list[int(np.ceil((train_percentage+valid_percentage)*num_items)):]
+
+		if use_overlap:
+			valid_dict[user] = purchase_list[int(np.ceil(train_percentage*num_items))-n:int(np.ceil((train_percentage+valid_percentage)*num_items))]
+			test_dict[user] = purchase_list[int(np.ceil((train_percentage+valid_percentage)*num_items))-n:]
+		else:
+			valid_dict[user] = purchase_list[int(np.ceil(train_percentage*num_items)):int(np.ceil((train_percentage+valid_percentage)*num_items))]
+			test_dict[user] = purchase_list[int(np.ceil((train_percentage+valid_percentage)*num_items)):]
 	
 	return [train_dict, valid_dict, test_dict]
 
 print("Splitting into training, validation, and test data")
-train_dict, valid_dict, test_dict = split_by_userwise_percentage(user_item_dict, split_ratio)
+train_dict, valid_dict, test_dict = split_by_userwise_percentage(user_item_dict, split_ratio, n, use_overlap=use_overlapping_intervals)
 
-def gen_nback_table(data, n):
+def gen_nback_table(data, n, use_overlap=False):
+
+	if use_overlap: #Do not include items from the previous datasets as next items
+		start_index = n
+	else:
+		start_index = 0
 	data_table = [] #Rows are [userID, curItem, 1-backItem, 2-backItem, etc.]
 	for user in data:
 		user_item_list = data[user]
-		for i, item in enumerate(user_item_list):
+
+		for i in range(start_index, len(user_item_list)):
 			cur_row = [user]
 			num_prev = -1
 			for j in range(n+1):
@@ -139,11 +157,11 @@ def gen_nback_table(data, n):
 	return data_table
 
 print("Generating train data table")
-train_table = gen_nback_table(train_dict, n)
+train_table = gen_nback_table(train_dict, n, use_overlap=use_overlapping_intervals)
 print("Generating validation data table")
-valid_table = gen_nback_table(valid_dict, n)
+valid_table = gen_nback_table(valid_dict, n, use_overlap=use_overlapping_intervals)
 print("Generating test data table")
-test_table  = gen_nback_table(test_dict, n)
+test_table  = gen_nback_table(test_dict, n, use_overlap=use_overlapping_intervals)
 
 #train_table.to_json(save_filename+"_train.json")
 #valid_table.to_json(save_filename+"_valid.json")

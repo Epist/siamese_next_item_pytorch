@@ -23,11 +23,12 @@ def main():
 	#Dataset parameters 
 	dataset = "googlelocal" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 	train_valid_test = [80,10,10]
-	filter_min = 5
+	filter_min = 2
 	#subset_size = 0
 	train_subset_size = 1
 	valid_subset_size = 1
 	test_subset_size = 1
+	use_overlapping_intervals = True
 
 	#Training parameters
 	max_epochs = 100
@@ -53,7 +54,7 @@ def main():
 
 	model_save_name = "next_item_pred_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(embedding_size)+"emb_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subSizes_" + model_type + "_filt" + str(filter_min)
 
-	dataset_params = {"dataset":dataset, "train_valid_test":train_valid_test, "filter_min":filter_min}
+	dataset_params = {"dataset":dataset, "train_valid_test":train_valid_test, "filter_min":filter_min, "overlap":use_overlapping_intervals}
 	data_path = get_dataset_fn(dataset_params)
 
 	model_save_name += "_" + dataset + "_"

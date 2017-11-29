@@ -14,7 +14,7 @@ def get_dataset_fn(p):
 	elif dataset == "amazon_clothing":
 		data_path = "./data/amazon_clothing/data_tables_split_"
 	elif dataset == "googlelocal":
-		data_path = "./data/google_local/data_tables_split_"
+		data_path = "./data/googlelocal/data_tables_split_"
 
 
 	trainValidTest = p["train_valid_test"]
@@ -24,6 +24,9 @@ def get_dataset_fn(p):
 	if filter_size is not None:
 		data_path += "_filter" + str(filter_size)
 
+	overlap = p["overlap"]
+	if overlap:
+		data_path += "_withoverlap"
 
 
 	if os.path.isfile(data_path+"_metadata.json"):
