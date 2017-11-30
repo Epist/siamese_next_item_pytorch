@@ -21,9 +21,9 @@ def main():
 	#Parameters:
 
 	#Dataset parameters 
-	dataset = "googlelocal" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
+	dataset = "amazon_videoGames" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 	train_valid_test = [80,10,10]
-	filter_min = 2
+	filter_min = 5
 	#subset_size = 0
 	train_subset_size = 1
 	valid_subset_size = 1
@@ -42,7 +42,7 @@ def main():
 	numlayers = 2
 	num_hidden_units = 64
 	embedding_size = 32
-	num_previous_items = 1
+	num_previous_items = 2
 	model_save_path = "models/"
 	model_loss = 'mse'
 	optimizer_type = 'adagrad'

@@ -13,11 +13,11 @@ import json
 
 
 #Source data parameters
-datapath = "/data1/googlelocal/googlelocal_ratings_timestamps.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv" #"/data1/googlelocal/googlelocal_ratings_timestamps.csv"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
-header = False
+datapath = "/data1/amazon/productGraph/categoryFiles/ratings_Automotive.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv" #"/data1/googlelocal/googlelocal_ratings_timestamps.csv"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
+header = False #Needed for beeradvocate dataset
 
 #Dataset generation parameters
-save_filename = "data/googlelocal/data_tables_split_80_10_10_filter"
+save_filename = "data/amazon_automotive/data_tables_split_80_10_10_filter"
 split_ratio = [0.8,0.1,0.1]
 n = 5 #Number of previous items to include in each table entry (linearly increases the size of the table)
 min_num_ratings = 2
