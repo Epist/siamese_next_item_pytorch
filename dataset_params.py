@@ -28,6 +28,9 @@ def get_dataset_fn(p):
 	if overlap:
 		data_path += "_withoverlap"
 
+	splittype = p["splittype"]
+	if splittype == "transrec":
+		data_path += '_transrec'
 
 	if os.path.isfile(data_path+"_metadata.json"):
 		return data_path

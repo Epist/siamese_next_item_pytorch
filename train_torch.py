@@ -21,7 +21,7 @@ def main():
 	#Parameters:
 
 	#Dataset parameters 
-	dataset = "amazon_videoGames" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
+	dataset = "amazon_automotive" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 	train_valid_test = [80,10,10]
 	filter_min = 5
 	#subset_size = 0
@@ -29,6 +29,7 @@ def main():
 	valid_subset_size = 1
 	test_subset_size = 1
 	use_overlapping_intervals = True
+	splittype = "transrec" #percentage or transrec
 
 	#Training parameters
 	max_epochs = 100
@@ -42,7 +43,7 @@ def main():
 	numlayers = 2
 	num_hidden_units = 64
 	embedding_size = 32
-	num_previous_items = 2
+	num_previous_items = 1
 	model_save_path = "models/"
 	model_loss = 'mse'
 	optimizer_type = 'adagrad'
@@ -54,7 +55,7 @@ def main():
 
 	model_save_name = "next_item_pred_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(embedding_size)+"emb_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subSizes_" + model_type + "_filt" + str(filter_min)
 
-	dataset_params = {"dataset":dataset, "train_valid_test":train_valid_test, "filter_min":filter_min, "overlap":use_overlapping_intervals}
+	dataset_params = {"dataset":dataset, "train_valid_test":train_valid_test, "filter_min":filter_min, "overlap":use_overlapping_intervals, "splittype":splittype}
 	data_path = get_dataset_fn(dataset_params)
 
 	model_save_name += "_" + dataset + "_"

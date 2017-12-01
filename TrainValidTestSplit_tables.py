@@ -20,12 +20,16 @@ header = False #Needed for beeradvocate dataset
 save_filename = "data/amazon_automotive/data_tables_split_80_10_10_filter"
 split_ratio = [0.8,0.1,0.1]
 n = 5 #Number of previous items to include in each table entry (linearly increases the size of the table)
-min_num_ratings = 2
+min_num_ratings = 1
+filter_type = "just_items" #"concurrent" "user-first" "item-first" "just_users" "just_items"
 use_overlapping_intervals = True
+splittype = "transrec"  # "percentage" or "transrec"
 
 save_filename += str(min_num_ratings)
 if use_overlapping_intervals:
 	save_filename += "_withoverlap"
+if splittype == "transrec":
+	save_filename += '_transrec'
 
 print("Loading raw data from ", datapath)
 if header:
@@ -34,12 +38,55 @@ else:
 	raw_data = pd.read_csv(datapath, header=None)
 raw_data.columns = ["userId", "itemId", "rating", "timestamp"]
 
-def remove_underrepresented(data, min_num_ratings):
+"""def remove_underrepresented(data, min_num_ratings):
 	orig_len = len(data)
 	g = data.groupby('userId')
 	data = g.filter(lambda x: len(x) >= min_num_ratings)
 	g = data.groupby('itemId')
 	data = g.filter(lambda x: len(x) >= min_num_ratings)
+	new_len = len(data)
+	print("Filter kept ", new_len, "/", orig_len, " observations")
+	return data"""
+
+def remove_underrepresented(data, min_num_ratings, filter_type):
+	orig_len = len(data)
+
+	if filter_type == "concurrent":
+		vc_u = data.userId.value_counts()
+		vc_i = data.itemId.value_counts()
+
+		u_list = vc_u.index[vc_u.values > min_num_ratings]
+		i_list = vc_i.index[vc_i.values > min_num_ratings]
+
+		data = data[data.userId.isin(u_list)]
+		data = data[data.itemId.isin(i_list)]
+	elif filter_type == "user_first":
+		vc_u = data.userId.value_counts()
+		u_list = vc_u.index[vc_u.values > min_num_ratings]
+		data = data[data.userId.isin(u_list)]
+
+		vc_i = data.itemId.value_counts()
+		i_list = vc_i.index[vc_i.values > min_num_ratings]
+		data = data[data.itemId.isin(i_list)]
+	elif filter_type == "item_first":
+		vc_i = data.itemId.value_counts()
+		i_list = vc_i.index[vc_i.values > min_num_ratings]
+		data = data[data.itemId.isin(i_list)]
+
+		vc_u = data.userId.value_counts()
+		u_list = vc_u.index[vc_u.values > min_num_ratings]
+		data = data[data.userId.isin(u_list)]
+	elif filter_type == "just_users":
+		vc_u = data.userId.value_counts()
+		u_list = vc_u.index[vc_u.values > min_num_ratings]
+		data = data[data.userId.isin(u_list)]
+	elif filter_type == "just_items":
+		vc_i = data.itemId.value_counts()
+		i_list = vc_i.index[vc_i.values > min_num_ratings]
+		data = data[data.itemId.isin(i_list)]
+	else:
+		raise(Exception("Filter type not supported"))
+
 	new_len = len(data)
 	print("Filter kept ", new_len, "/", orig_len, " observations")
 	return data
@@ -86,7 +133,7 @@ def sort_and_rank(item_timestamp_list):
 
 if min_num_ratings>0:
 	print("Filtering data")
-	filtered_data = remove_underrepresented(raw_data, min_num_ratings)
+	filtered_data = remove_underrepresented(raw_data, min_num_ratings, filter_type)
 else:
 	filtered_data = raw_data
 	
@@ -124,8 +171,26 @@ def split_by_userwise_percentage(user_item_dict, train_valid_test_split, n, use_
 	
 	return [train_dict, valid_dict, test_dict]
 
+def split_by_transrec_paper(user_item_dict, n):
+	train_dict = {}
+	valid_dict = {}
+	test_dict = {}
+	
+	for user in user_item_dict:
+		purchase_list = user_item_dict[user]
+
+		train_dict[user] = purchase_list[0:-2]
+		valid_dict[user] = purchase_list[-2-n:-1]
+		test_dict[user] = purchase_list[-1-n:]
+	
+	return [train_dict, valid_dict, test_dict]
+
 print("Splitting into training, validation, and test data")
-train_dict, valid_dict, test_dict = split_by_userwise_percentage(user_item_dict, split_ratio, n, use_overlap=use_overlapping_intervals)
+
+if splittype == "percentage":
+	train_dict, valid_dict, test_dict = split_by_userwise_percentage(user_item_dict, split_ratio, n, use_overlap=use_overlapping_intervals)
+elif splittype == "transrec":
+	train_dict, valid_dict, test_dict = split_by_transrec_paper(user_item_dict, n)
 
 def gen_nback_table(data, n, use_overlap=False):
 
@@ -141,7 +206,7 @@ def gen_nback_table(data, n, use_overlap=False):
 			cur_row = [user]
 			num_prev = -1
 			for j in range(n+1):
-				if i-j >=0:
+				if i-j >= 0:
 					cur_row.append(user_item_list[i-j])
 					num_prev += 1
 				else:
@@ -156,12 +221,40 @@ def gen_nback_table(data, n, use_overlap=False):
 	#return pandas_data
 	return data_table
 
+def gen_nback_table_transrec_paper(data, n):
+
+	#ui_list_lens = []
+	data_table = [] #Rows are [userID, curItem, 1-backItem, 2-backItem, etc.]
+	for user in data:
+		user_item_list = data[user]
+
+		cur_row = [user]
+		num_prev = -1
+		num_obs = len(user_item_list)
+		for j in range(n+1):
+			if num_obs-j > 0:
+				cur_row.append(user_item_list[num_obs-j-1])
+				num_prev += 1
+			else:
+				cur_row.append(None)
+		cur_row.append(num_prev) #Additional 
+		data_table.append(cur_row)
+	#print("Set: ", list(set(ui_list_lens)))
+	return data_table
+
 print("Generating train data table")
 train_table = gen_nback_table(train_dict, n, use_overlap=False) #Training data never has overlap
-print("Generating validation data table")
-valid_table = gen_nback_table(valid_dict, n, use_overlap=use_overlapping_intervals)
-print("Generating test data table")
-test_table  = gen_nback_table(test_dict, n, use_overlap=use_overlapping_intervals)
+if splittype == "percentage":
+	print("Generating validation data table")
+	valid_table = gen_nback_table(valid_dict, n, use_overlap=use_overlapping_intervals)
+	print("Generating test data table")
+	test_table  = gen_nback_table(test_dict, n, use_overlap=use_overlapping_intervals)
+elif splittype=="transrec":
+	print("Generating validation data table")
+	valid_table = gen_nback_table_transrec_paper(valid_dict, n)
+	print("Generating test data table")
+	test_table  = gen_nback_table_transrec_paper(test_dict, n)
+
 
 #train_table.to_json(save_filename+"_train.json")
 #valid_table.to_json(save_filename+"_valid.json")
@@ -181,4 +274,6 @@ metadata = [user_id_dict, item_id_dict]
 
 with open(save_filename+"_metadata.json", "w") as f:
 	json.dump(metadata, f)
+
+print("Data saved as: ", save_filename)
 
