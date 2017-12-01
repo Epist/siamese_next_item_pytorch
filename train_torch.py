@@ -216,6 +216,7 @@ def main():
 		preds = best_model(inputs)
 
 		loss = criterion(preds, targets)
+		mae = mae_loss(preds, targets)
 		cumulative_loss_epoch_test += loss.data.cpu().numpy()[0]
 		cum_mae_test += mae.data.cpu().numpy()[0]
 		try:
