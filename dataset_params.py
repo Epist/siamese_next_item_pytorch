@@ -18,11 +18,15 @@ def get_dataset_fn(p):
 
 
 	trainValidTest = p["train_valid_test"]
-	data_path += str(trainValidTest[0]) + "_" + str(trainValidTest[1]) + "_" + str(trainValidTest[2])
+	data_path += str(trainValidTest[0]) + "_" + str(trainValidTest[1]) + "_" + str(trainValidTest[2]) + "_"
+
+	filter_type = p["filter_type"]
+	if filter_type is not None:
+		data_path += filter_type
 
 	filter_size = p["filter_min"]
 	if filter_size is not None:
-		data_path += "_filter" + str(filter_size)
+		data_path += "filter" + str(filter_size)
 
 	overlap = p["overlap"]
 	if overlap:

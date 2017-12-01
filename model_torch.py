@@ -37,7 +37,7 @@ class SiameseRecNet(torch.nn.Module):
 		init.xavier_uniform(self.user_embedding.weight)
 
 		if self.embedding_size != self.num_hidden:
-			raise(exception("Embedding size must be the same as num hidden units for this model!"))
+			raise(Exception("Embedding size must be the same as num hidden units for this model!"))
 
 		self.siamese_layers_dict = OrderedDict()
 		for i in range(self.num_hidden_layers):

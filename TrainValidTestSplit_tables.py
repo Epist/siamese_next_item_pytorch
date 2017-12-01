@@ -13,18 +13,20 @@ import json
 
 
 #Source data parameters
-datapath = "/data1/amazon/productGraph/categoryFiles/ratings_Automotive.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv" #"/data1/googlelocal/googlelocal_ratings_timestamps.csv"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
+datapath = "/data1/amazon/productGraph/categoryFiles/ratings_Electronics.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv" #"/data1/googlelocal/googlelocal_ratings_timestamps.csv"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
 header = False #Needed for beeradvocate dataset
 
 #Dataset generation parameters
-save_filename = "data/amazon_automotive/data_tables_split_80_10_10_filter"
-split_ratio = [0.8,0.1,0.1]
+save_filename = "data/amazon_electronics/data_tables_split_80_10_10_"
+split_ratio = [0.8,0.1,0.1] #Not relevant in transrec mode
 n = 5 #Number of previous items to include in each table entry (linearly increases the size of the table)
-min_num_ratings = 1
-filter_type = "just_items" #"concurrent" "user-first" "item-first" "just_users" "just_items"
-use_overlapping_intervals = True
+min_num_ratings = 5
+filter_type = "concurrent" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
+use_overlapping_intervals = True #Not relevant in transrec mode
 splittype = "transrec"  # "percentage" or "transrec"
 
+save_filename += filter_type
+save_filename += "filter"
 save_filename += str(min_num_ratings)
 if use_overlapping_intervals:
 	save_filename += "_withoverlap"
@@ -60,6 +62,31 @@ def remove_underrepresented(data, min_num_ratings, filter_type):
 
 		data = data[data.userId.isin(u_list)]
 		data = data[data.itemId.isin(i_list)]
+	elif filter_type == "max_k-core":
+		print("Searching for max k-core starting from k =",min_num_ratings)
+		k=min_num_ratings
+		while k>0:
+			d = data
+			last_len = len(d) + 1
+			while last_len > len(d):
+				#print("iteration ", i, "  last len: ", last_len)
+				last_len = len(d)
+				vc_u = d.userId.value_counts()
+				vc_i = d.itemId.value_counts()
+
+				u_list = vc_u.index[vc_u.values > k]
+				i_list = vc_i.index[vc_i.values > k]
+
+				d = d[d.userId.isin(u_list)]
+				d = d[d.itemId.isin(i_list)]
+			if len(d)>0:
+				data = d
+				break
+			else:
+				print("Data is ",str(k)+"-degenerate")
+				k -= 1
+		print("Found a max k core of k =",k)
+
 	elif filter_type == "user_first":
 		vc_u = data.userId.value_counts()
 		u_list = vc_u.index[vc_u.values > min_num_ratings]

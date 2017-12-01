@@ -21,20 +21,21 @@ def main():
 	#Parameters:
 
 	#Dataset parameters 
-	dataset = "amazon_automotive" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
+	dataset = "amazon_videoGames" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 	train_valid_test = [80,10,10]
 	filter_min = 5
+	filter_type = "concurrent" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
 	#subset_size = 0
-	train_subset_size = 1
+	train_subset_size = 0
 	valid_subset_size = 1
 	test_subset_size = 1
 	use_overlapping_intervals = True
 	splittype = "transrec" #percentage or transrec
 
 	#Training parameters
-	max_epochs = 100
+	max_epochs = 200
 	batch_size = 32*2
-	patience = 5
+	patience = 10
 	early_stopping_metric = "mae"
 	use_gpu = True
 	learning_rate = (1e-2)/2 #Default for adagrad is 1e-2
@@ -45,17 +46,17 @@ def main():
 	embedding_size = 32
 	num_previous_items = 1
 	model_save_path = "models/"
-	model_loss = 'mse'
+	model_loss = 'mae'
 	optimizer_type = 'adagrad'
 	activation_type = 'tanh'
 	model_type = "shared" # "shared", "independent", "cascade"
 	l2_regularization = 0
 	dropout_prob = 0.5
-	use_masking = False #Missing data masking (The laternative is to train a dummy embedding for absent datapoints)
+	use_masking = False #Missing data masking (The default is to train a dummy embedding for absent datapoints)
 
 	model_save_name = "next_item_pred_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(embedding_size)+"emb_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subSizes_" + model_type + "_filt" + str(filter_min)
 
-	dataset_params = {"dataset":dataset, "train_valid_test":train_valid_test, "filter_min":filter_min, "overlap":use_overlapping_intervals, "splittype":splittype}
+	dataset_params = {"dataset":dataset, "train_valid_test":train_valid_test, "filter_min":filter_min, "overlap":use_overlapping_intervals, "splittype":splittype, "filter_type":filter_type}
 	data_path = get_dataset_fn(dataset_params)
 
 	model_save_name += "_" + dataset + "_"
@@ -78,8 +79,13 @@ def main():
 
 	if use_gpu:
 		m.cuda()
-	criterion = torch.nn.MSELoss()
+
 	mae_loss = torch.nn.L1Loss()
+	if model_loss == "mse":
+		criterion = torch.nn.MSELoss()
+	elif model_loss == "mae":
+		criterion = mae_loss
+	
 
 	if optimizer_type == "adam":
 		optimizer = torch.optim.Adam(m.parameters(), lr=learning_rate, weight_decay=l2_regularization)
