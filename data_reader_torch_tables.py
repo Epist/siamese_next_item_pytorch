@@ -181,15 +181,15 @@ class data_reader(object):
 
 
 					#Choose a random order of presentation for the target and distractor items
-					order = np.random.randint(2)
-					if order == 0:
-						left_item_info = next_item
-						right_item_info = distractor_item
-						targets[datapoint,0] = 1 #True next item is on the left
-					elif order == 1:
-						left_item_info = distractor_item
-						right_item_info = next_item
-						targets[datapoint,0] = -1 #True next item is on the right
+					#order = np.random.randint(2)
+					#if order == 0:
+					left_item_info = next_item
+					right_item_info = distractor_item
+					targets[datapoint,0] = 1 #True next item is on the left
+					#elif order == 1:
+					#	left_item_info = distractor_item
+					#	right_item_info = next_item
+					#	targets[datapoint,0] = -1 #True next item is on the right
 
 					batch_user_inputs.append(user_info)
 					#print(user_info)

@@ -21,14 +21,14 @@ def main():
 	#Parameters:
 
 	#Dataset parameters 
-	dataset = "amazon_videoGames" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
+	dataset = "amazon_automotive" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 	train_valid_test = [80,10,10]
 	filter_min = 5
 	filter_type = "concurrent" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
 	#subset_size = 0
 	train_subset_size = 0
 	valid_subset_size = 1
-	test_subset_size = 1
+	test_subset_size = 2
 	use_overlapping_intervals = True
 	splittype = "transrec" #percentage or transrec
 
@@ -46,7 +46,7 @@ def main():
 	embedding_size = 32
 	num_previous_items = 1
 	model_save_path = "models/"
-	model_loss = 'mae'
+	model_loss = 'mae' #mse, mae. bce
 	optimizer_type = 'adagrad'
 	activation_type = 'tanh'
 	model_type = "shared" # "shared", "independent", "cascade"
@@ -85,6 +85,8 @@ def main():
 		criterion = torch.nn.MSELoss()
 	elif model_loss == "mae":
 		criterion = mae_loss
+	elif model_loss == "bce":
+		criterion = torch.nn.BCELoss()
 	
 
 	if optimizer_type == "adam":
@@ -134,7 +136,7 @@ def main():
 			optimizer.step()
 		train_loss = cumulative_loss_epoch_train/train_epoch_length
 		train_mae = cum_mae_train/train_epoch_length
-		train_auc = 1-(train_mae/2)
+		train_auc = 1-(train_mae)
 		print("\nTrain loss for epoch ", i, " : ", train_loss)
 		print("Train AUC for epoch ", i, " : ", train_auc)
 		train_history.append((train_loss,train_auc))
@@ -160,7 +162,7 @@ def main():
 		#Early stopping code
 		val_loss = cumulative_loss_epoch_valid/val_epoch_length
 		val_mae = cum_mae_valid/val_epoch_length
-		val_auc = 1-(val_mae/2)
+		val_auc = 1-(val_mae)
 		print("\nValidation loss for epoch ", i, " : ", val_loss)
 		print("Validation AUC for epoch ", i, " : ", val_auc)
 		val_history.append((val_loss,val_auc))
@@ -216,6 +218,7 @@ def main():
 		preds = best_model(inputs)
 
 		loss = criterion(preds, targets)
+		mae = mae_loss(preds, targets)
 		cumulative_loss_epoch_test += loss.data.cpu().numpy()[0]
 		cum_mae_test += mae.data.cpu().numpy()[0]
 		try:
@@ -224,7 +227,7 @@ def main():
 			print("Loss: {:1.5f}".format(loss.data.cpu().numpy()[0]), "      Average loss so far: {:1.8f}".format(cumulative_loss_epoch_test/(j+1)), flush=True)
 
 	test_mae = cum_mae_test/test_epoch_length
-	test_auc = 1-(test_mae/2)
+	test_auc = 1-(test_mae)
 	print("\nTest loss: ", cumulative_loss_epoch_test/test_epoch_length, flush=True)
 	print("Test AUC: ", test_auc, flush=True)
 

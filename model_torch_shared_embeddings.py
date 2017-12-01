@@ -68,9 +68,11 @@ class SiameseRecNet(torch.nn.Module):
 
 		self.siamese_layers_dict["linear_output"] = nn.Linear(self.num_hidden, 1)
 		init.xavier_uniform(self.siamese_layers_dict["linear_output"].weight)
-		self.siamese_layers_dict["sigmoid_output"] = nn.Sigmoid()
+		#self.siamese_layers_dict["sigmoid_output"] = nn.Sigmoid()
 
 		self.siamese_half = nn.Sequential(self.siamese_layers_dict)
+
+		self.output_sigmoid = nn.Sigmoid()
 
 	def forward(self, input_list):
 
@@ -110,4 +112,4 @@ class SiameseRecNet(torch.nn.Module):
 		left_output = self.siamese_half(left_embeddings)
 		right_output = self.siamese_half(right_embeddings)
 
-		return left_output - right_output
+		return self.output_sigmoid(left_output - right_output)
