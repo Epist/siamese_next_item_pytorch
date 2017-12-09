@@ -36,8 +36,8 @@ class SiameseRecNet(torch.nn.Module):
 		self.user_embedding = torch.nn.Embedding(self.num_users, self.embedding_size)
 		init.xavier_uniform(self.user_embedding.weight)
 
-		if self.embedding_size != self.num_hidden:
-			raise(Exception("Embedding size must be the same as num hidden units for this model!"))
+		#if self.embedding_size != self.num_hidden:
+		#	raise(Exception("Embedding size must be the same as num hidden units for this model!"))
 
 		self.siamese_layers_dict = OrderedDict()
 		for i in range(self.num_hidden_layers):
@@ -45,6 +45,9 @@ class SiameseRecNet(torch.nn.Module):
 				#self.siamese_layers_dict["sparse_linear_input"] = OneDSparseLinear(self.input_dim, self.num_hidden)
 				#self.siamese_layers_dict["embedding_input"] = torch.nn.Embedding(self.input_dim, self.num_hidden)
 				pass
+			elif i==1:
+				self.siamese_layers_dict["linear_"+str(i)] = nn.Linear(self.embedding_size, self.num_hidden)
+				init.xavier_uniform(self.siamese_layers_dict["linear_"+str(i)].weight)
 			else:
 				self.siamese_layers_dict["linear_"+str(i)] = nn.Linear(self.num_hidden, self.num_hidden)
 				init.xavier_uniform(self.siamese_layers_dict["linear_"+str(i)].weight)
@@ -62,9 +65,11 @@ class SiameseRecNet(torch.nn.Module):
 
 		self.siamese_layers_dict["linear_output"] = nn.Linear(self.num_hidden, 1)
 		init.xavier_uniform(self.siamese_layers_dict["linear_output"].weight)
-		self.siamese_layers_dict["sigmoid_output"] = nn.Sigmoid()
+		#self.siamese_layers_dict["sigmoid_output"] = nn.Sigmoid()
 
 		self.siamese_half = nn.Sequential(self.siamese_layers_dict)
+
+		self.output_sigmoid = nn.Sigmoid()
 
 	def forward(self, input_list):
 
@@ -103,7 +108,7 @@ class SiameseRecNet(torch.nn.Module):
 		left_output = self.siamese_half(left_embeddings)
 		right_output = self.siamese_half(right_embeddings)
 
-		return left_output - right_output
+		return self.output_sigmoid(left_output - right_output)
 
 
 

@@ -82,10 +82,10 @@ class SiameseRecNet(torch.nn.Module):
 
 		DO = torch.nn.modules.Dropout(p=self.dropout_prob)
 
-		left_embeddings = self.next_item_input_layer(self.post_embedding_nonlinearity(DO(self.item_embedding(input_list[1])))) #Left candidate item
-		right_embeddings = self.next_item_input_layer (self.post_embedding_nonlinearity(DO(self.item_embedding(input_list[2])))) #Right candidate item
+		left_embeddings = self.next_item_input_layer(DO(self.post_embedding_nonlinearity(self.item_embedding(input_list[1])))) #Left candidate item
+		right_embeddings = self.next_item_input_layer(DO(self.post_embedding_nonlinearity(self.item_embedding(input_list[2])))) #Right candidate item
 
-		user_input_embedding = self.user_input_layer(self.post_embedding_nonlinearity(DO(self.user_embedding(input_list[0]))))
+		user_input_embedding = self.user_input_layer(DO(self.post_embedding_nonlinearity(self.user_embedding(input_list[0]))))
 		left_embeddings += user_input_embedding
 		right_embeddings += user_input_embedding
 
@@ -96,13 +96,13 @@ class SiameseRecNet(torch.nn.Module):
 			hidden = self.prev_items_hidden_layers[i]
 			cur_prev_item_input_embedding = self.item_embedding(cur_prev_item_input)
 			if self.use_masking:
-				post_embedding = hidden(self.post_embedding_nonlinearity(DO(cur_prev_item_input_embedding))).t()
+				post_embedding = hidden(DO(self.post_embedding_nonlinearity(cur_prev_item_input_embedding))).t()
 				cur_mask = prev_item_masks[i]
 				masked_embedding = post_embedding.t() * cur_mask.expand_as(post_embedding).t()
 				left_embeddings += masked_embedding
 				right_embeddings += masked_embedding
 			else:
-				post_embedding = hidden(self.post_embedding_nonlinearity(DO(cur_prev_item_input_embedding)))
+				post_embedding = hidden(DO(self.post_embedding_nonlinearity(cur_prev_item_input_embedding)))
 				left_embeddings += post_embedding
 				right_embeddings += post_embedding
 
@@ -113,3 +113,17 @@ class SiameseRecNet(torch.nn.Module):
 		right_output = self.siamese_half(right_embeddings)
 
 		return self.output_sigmoid(left_output - right_output)
+
+	def train(self):
+		super(SiameseRecNet, self).train(mode=True)
+		self.siamese_half.train(mode=True)
+		for i in range(self.num_hidden_layers):
+			if self.dropout_prob != 0:
+				self.siamese_layers_dict["dropout_"+str(i)].train(mode=True)
+
+	def eval(self):
+		super(SiameseRecNet, self).train(mode=False)
+		self.siamese_half.eval()
+		for i in range(self.num_hidden_layers):
+			if self.dropout_prob != 0:
+				self.siamese_layers_dict["dropout_"+str(i)].eval()

@@ -13,15 +13,15 @@ import json
 
 
 #Source data parameters
-datapath = "/data1/amazon/productGraph/categoryFiles/ratings_Electronics.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv" #"/data1/googlelocal/googlelocal_ratings_timestamps.csv"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
+datapath = "/data1/googlelocal/googlelocal_ratings_timestamps.csv" #"/data1/movielens/ml-1m/ratings.csv" #"/data1/amazon/productGraph/categoryFiles/ratings_Video_Games.csv" #"/data1/googlelocal/googlelocal_ratings_timestamps.csv"  "/data1/beer/beeradvocate-crawler/ba_ratings.csv"
 header = False #Needed for beeradvocate dataset
 
 #Dataset generation parameters
-save_filename = "data/amazon_electronics/data_tables_split_80_10_10_"
+save_filename = "data/googlelocal/data_tables_split_80_10_10_"
 split_ratio = [0.8,0.1,0.1] #Not relevant in transrec mode
-n = 5 #Number of previous items to include in each table entry (linearly increases the size of the table)
+n = 10 #Number of previous items to include in each table entry (linearly increases the size of the table)
 min_num_ratings = 5
-filter_type = "concurrent" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
+filter_type = "just_items" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
 use_overlapping_intervals = True #Not relevant in transrec mode
 splittype = "transrec"  # "percentage" or "transrec"
 

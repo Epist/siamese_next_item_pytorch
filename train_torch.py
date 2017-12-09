@@ -9,6 +9,7 @@ from data_reader_torch_tables import data_reader
 from model_torch import SiameseRecNet
 from model_torch_shared_embeddings import SiameseRecNet as SiameseRecNet_shared
 from model_torch_cascade import SiameseRecNet as SiameseRecNet_cascade
+from test2 import SiameseRecNet as testmodel
 from dataset_params import get_dataset_fn
 import pandas as pd
 import numpy as np
@@ -21,22 +22,22 @@ def main():
 	#Parameters:
 
 	#Dataset parameters 
-	dataset = "amazon_automotive" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
+	dataset = "amazon_videoGames" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 	train_valid_test = [80,10,10]
 	filter_min = 5
-	filter_type = "concurrent" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
+	filter_type = "just_items" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
 	#subset_size = 0
-	train_subset_size = 0
-	valid_subset_size = 1
-	test_subset_size = 2
+	train_subset_size = 1
+	valid_subset_size = 2
+	test_subset_size = 3
 	use_overlapping_intervals = True
 	splittype = "transrec" #percentage or transrec
 
 	#Training parameters
 	max_epochs = 200
 	batch_size = 32*2
-	patience = 10
-	early_stopping_metric = "mae"
+	patience = 5
+	early_stopping_metric = "auc"
 	use_gpu = True
 	learning_rate = (1e-2)/2 #Default for adagrad is 1e-2
 
@@ -46,10 +47,10 @@ def main():
 	embedding_size = 32
 	num_previous_items = 1
 	model_save_path = "models/"
-	model_loss = 'mae' #mse, mae. bce
+	model_loss = 'log_loss' #mse, mae. bce, log_loss
 	optimizer_type = 'adagrad'
 	activation_type = 'tanh'
-	model_type = "shared" # "shared", "independent", "cascade"
+	model_type = "test" # "shared", "independent", "cascade"
 	l2_regularization = 0
 	dropout_prob = 0.5
 	use_masking = False #Missing data masking (The default is to train a dummy embedding for absent datapoints)
@@ -69,13 +70,15 @@ def main():
 	siamese_data_reader = data_reader(data_path, train_subset_size, valid_subset_size, test_subset_size)
 
 	if model_type == "shared":
-		model_type = SiameseRecNet_shared
+		model_class = SiameseRecNet_shared
 	elif model_type == "independent":
-		model_type = SiameseRecNet
+		model_class = SiameseRecNet
 	elif model_type == "cascade":
-		model_type = SiameseRecNet_cascade
+		model_class = SiameseRecNet_cascade
+	elif model_type == "test":
+		model_class = testmodel
 
-	m = model_type(siamese_data_reader.num_users, siamese_data_reader.num_items, num_previous_items, numlayers, num_hidden_units, embedding_size, activation_type, dropout_prob, use_masking, use_gpu)
+	m = model_class(siamese_data_reader.num_users, siamese_data_reader.num_items, num_previous_items, numlayers, num_hidden_units, embedding_size, activation_type, dropout_prob, use_masking, use_gpu)
 
 	if use_gpu:
 		m.cuda()
@@ -87,6 +90,8 @@ def main():
 		criterion = mae_loss
 	elif model_loss == "bce":
 		criterion = torch.nn.BCELoss()
+	elif model_loss == "log_loss":
+		criterion = LogLoss()
 	
 
 	if optimizer_type == "adam":
@@ -116,9 +121,11 @@ def main():
 		print("Training model")
 		cumulative_loss_epoch_train = 0
 		cum_mae_train = 0
+		m.train()
 		for j in range(train_epoch_length):
 			inputs, targets = next(train_gen)
 			preds = m(inputs)
+			#print([float(x[0]) for x in preds.data.cpu().numpy()])
 
 			loss = criterion(preds, targets)
 			mae = mae_loss(preds, targets)
@@ -145,12 +152,19 @@ def main():
 		print("\nValidating model")
 		cumulative_loss_epoch_valid = 0
 		cum_mae_valid = 0
+		cum_rounded_preds = 0
+		cum_len = 0
+		m.eval()
 		for j in range(val_epoch_length):
 			inputs, targets = next(valid_gen)
-			preds = m(inputs)
+			val_preds = m(inputs)
+			preds_list = [float(x[0]) for x in val_preds.data.cpu().numpy()]
+			cum_len += len(preds_list)
+			rounded_preds_list = [round(x) for x in preds_list]
+			cum_rounded_preds += sum(rounded_preds_list)
 
-			loss = criterion(preds, targets)
-			mae = mae_loss(preds, targets)
+			loss = criterion(val_preds, targets)
+			mae = mae_loss(val_preds, targets)
 			cumulative_loss_epoch_valid += loss.data.cpu().numpy()[0]
 			cum_mae_valid += mae.data.cpu().numpy()[0]
 			if j%50==0: #Keeps the log sile size from exploding
@@ -163,13 +177,17 @@ def main():
 		val_loss = cumulative_loss_epoch_valid/val_epoch_length
 		val_mae = cum_mae_valid/val_epoch_length
 		val_auc = 1-(val_mae)
+		val_ranked_auc = cum_rounded_preds/cum_len
 		print("\nValidation loss for epoch ", i, " : ", val_loss)
 		print("Validation AUC for epoch ", i, " : ", val_auc)
+		print("Validation true ranking AUC: ", val_ranked_auc, flush=True)
 		val_history.append((val_loss,val_auc))
 		if early_stopping_metric == "loss":
 			val_metric = val_loss
 		elif early_stopping_metric == "mae":
 			val_metric = val_mae
+		elif early_stopping_metric == "auc":
+			val_metric = -val_ranked_auc
 
 		if min_loss is None:
 			min_loss = val_metric
@@ -213,9 +231,16 @@ def main():
 
 	cumulative_loss_epoch_test = 0
 	cum_mae_test = 0
+	cum_rounded_preds = 0
+	cum_len = 0
+	best_model.eval()
 	for j in range(test_epoch_length):
 		inputs, targets = next(test_gen)
 		preds = best_model(inputs)
+		preds_list = [float(x[0]) for x in preds.data.cpu().numpy()]
+		cum_len += len(preds_list)
+		rounded_preds_list = [round(x) for x in preds_list]
+		cum_rounded_preds += sum(rounded_preds_list)
 
 		loss = criterion(preds, targets)
 		mae = mae_loss(preds, targets)
@@ -228,8 +253,31 @@ def main():
 
 	test_mae = cum_mae_test/test_epoch_length
 	test_auc = 1-(test_mae)
+	test_ranked_auc = cum_rounded_preds/cum_len
 	print("\nTest loss: ", cumulative_loss_epoch_test/test_epoch_length, flush=True)
 	print("Test AUC: ", test_auc, flush=True)
+	print("Test true ranking AUC: ", test_ranked_auc, flush=True)
+
+
+class LogLoss(torch.nn.modules.loss._Loss):
+	def __init__(self, reduce=True):
+		size_average=True
+		super(LogLoss, self).__init__(size_average)
+		self.reduce = reduce
+
+	def forward(self, input, target):
+		#Target is not used
+		return self.log_loss(input, reduce=self.reduce)
+
+	def log_loss(self, input, reduce=True):
+		if reduce:
+			return -torch.mean(torch.log(input))
+		else:
+			return -torch.log(input)
+
+	    #return _pointwise_loss(lambda a, b: torch.abs(a - b), torch._C._nn.l1_loss,
+	    #	input, target, size_average, reduce)
+
 
 
 if __name__ == "__main__":
