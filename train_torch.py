@@ -22,37 +22,41 @@ def main():
 	#Parameters:
 
 	#Dataset parameters 
-	dataset = "amazon_videoGames" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
+	dataset = "amazon_automotive" # movielens20m, amazon_books, amazon_moviesAndTv, amazon_videoGames, amazon_clothing, beeradvocate, yelp, netflix, ml1m, amazon_automotive, googlelocal
 	train_valid_test = [80,10,10]
-	filter_min = 5
-	filter_type = "just_items" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
+	filter_min = 4
+	filter_type = "concurrent" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
 	#subset_size = 0
 	train_subset_size = 1
-	valid_subset_size = 2
-	test_subset_size = 3
+	valid_subset_size = 1
+	test_subset_size = 2
 	use_overlapping_intervals = True
 	splittype = "transrec" #percentage or transrec
+	distractor_type = "transrec" #"transrec" "not next"
+	sampling_type = "observation_wise" #"user_wise" "observation_wise"
+	#train_epoch_length = 10000
 
 	#Training parameters
 	max_epochs = 200
-	batch_size = 32*2
-	patience = 5
+	batch_size = 32*8
+	patience = 10
 	early_stopping_metric = "auc"
 	use_gpu = True
-	learning_rate = (1e-2)/2 #Default for adagrad is 1e-2
+	learning_rate = (1e-2)/16 #Default for adagrad is 1e-2
+	weight_clipping = True
 
 	#Model parameters
 	numlayers = 2
-	num_hidden_units = 64
-	embedding_size = 32
+	num_hidden_units = 128
+	embedding_size = 256
 	num_previous_items = 1
 	model_save_path = "models/"
-	model_loss = 'log_loss' #mse, mae. bce, log_loss
+	model_loss = 'direct_loss' #mse, mae. bce, log_loss, direct_loss
 	optimizer_type = 'adagrad'
-	activation_type = 'tanh'
+	activation_type = 'sigmoid'
 	model_type = "test" # "shared", "independent", "cascade"
-	l2_regularization = 0
-	dropout_prob = 0.5
+	l2_regularization = 0.0001
+	dropout_prob = 0
 	use_masking = False #Missing data masking (The default is to train a dummy embedding for absent datapoints)
 
 	model_save_name = "next_item_pred_"+str(batch_size)+"bs_"+str(numlayers)+"lay_"+str(num_hidden_units)+"hu_"+str(embedding_size)+"emb_"+str(dropout_prob)+"do_" + str(num_previous_items) + "prevItems_" + str(train_subset_size) + str(valid_subset_size)+ str(test_subset_size) +"subSizes_" + model_type + "_filt" + str(filter_min)
@@ -67,6 +71,7 @@ def main():
 	print("Model will be saved as: ", model_save_name)
 
 	print("Loading data for " + dataset)
+
 	siamese_data_reader = data_reader(data_path, train_subset_size, valid_subset_size, test_subset_size)
 
 	if model_type == "shared":
@@ -92,6 +97,9 @@ def main():
 		criterion = torch.nn.BCELoss()
 	elif model_loss == "log_loss":
 		criterion = LogLoss()
+	elif model_loss == "direct_loss":
+		criterion = DirectLoss()
+
 	
 
 	if optimizer_type == "adam":
@@ -100,6 +108,8 @@ def main():
 		optimizer = torch.optim.RMSprop(m.parameters(), lr=learning_rate, weight_decay=l2_regularization)
 	elif optimizer_type == "adagrad":
 		optimizer = torch.optim.Adagrad(m.parameters(), lr=learning_rate, weight_decay=l2_regularization)
+	elif optimizer_type == "sgd":
+		optimizer = torch.optim.SGD(m.parameters(), lr=learning_rate, weight_decay=l2_regularization)
 	else:
 		raise(notImplementedError())
 
@@ -108,8 +118,13 @@ def main():
 	train_history = []
 	val_history = []
 	best_model = None
-	train_gen = siamese_data_reader.data_gen(batch_size, "train", num_previous_items, use_masking, use_gpu)
-	valid_gen = siamese_data_reader.data_gen(batch_size, "valid", num_previous_items, use_masking, use_gpu)
+
+	if sampling_type == "user_wise":
+		train_gen = siamese_data_reader.data_gen_userwise(batch_size, "train", num_previous_items, use_masking, use_gpu)
+	elif sampling_type == "observation_wise":
+		train_gen = siamese_data_reader.data_gen(batch_size, "train", num_previous_items, use_masking, use_gpu, distractor_type)
+
+	valid_gen = siamese_data_reader.data_gen(batch_size, "valid", num_previous_items, use_masking, use_gpu, distractor_type)
 
 	train_epoch_length = int(math.ceil(siamese_data_reader.num_train_ratings_subset/batch_size))
 	val_epoch_length = int(math.ceil(siamese_data_reader.num_valid_ratings_subset/batch_size))
@@ -141,6 +156,8 @@ def main():
 			optimizer.zero_grad()
 			loss.backward()
 			optimizer.step()
+			if weight_clipping:
+				m.clip_weights()
 		train_loss = cumulative_loss_epoch_train/train_epoch_length
 		train_mae = cum_mae_train/train_epoch_length
 		train_auc = 1-(train_mae)
@@ -160,7 +177,7 @@ def main():
 			val_preds = m(inputs)
 			preds_list = [float(x[0]) for x in val_preds.data.cpu().numpy()]
 			cum_len += len(preds_list)
-			rounded_preds_list = [round(x) for x in preds_list]
+			rounded_preds_list = [1 if x>0.5 else 0 for x in preds_list]
 			cum_rounded_preds += sum(rounded_preds_list)
 
 			loss = criterion(val_preds, targets)
@@ -226,7 +243,7 @@ def main():
 
 	print("Testing model from epoch: ", best_epoch)
 
-	test_gen = siamese_data_reader.data_gen(batch_size, "test", num_previous_items, use_masking, use_gpu)
+	test_gen = siamese_data_reader.data_gen(batch_size, "test", num_previous_items, use_masking, use_gpu, distractor_type)
 	test_epoch_length = int(math.ceil(siamese_data_reader.num_test_ratings_subset/batch_size))
 
 	cumulative_loss_epoch_test = 0
@@ -239,7 +256,7 @@ def main():
 		preds = best_model(inputs)
 		preds_list = [float(x[0]) for x in preds.data.cpu().numpy()]
 		cum_len += len(preds_list)
-		rounded_preds_list = [round(x) for x in preds_list]
+		rounded_preds_list = [1 if x > 0.5 else 0 for x in preds_list]
 		cum_rounded_preds += sum(rounded_preds_list)
 
 		loss = criterion(preds, targets)
@@ -279,7 +296,28 @@ class LogLoss(torch.nn.modules.loss._Loss):
 	    #	input, target, size_average, reduce)
 
 
+class DirectLoss(torch.nn.modules.loss._Loss):
+	def __init__(self, reduce=True):
+		size_average=True
+		super(DirectLoss, self).__init__(size_average)
+		self.reduce = reduce
+
+	def forward(self, input, target):
+		#Target is not used
+		return self.d_loss(input, reduce=self.reduce)
+
+	def d_loss(self, input, reduce=True):
+		if reduce:
+			return -torch.mean(input)
+		else:
+			return -input
+
+
 
 if __name__ == "__main__":
 	#Parse command line parameters and send them to the script in the form of a parameter dictionary
 	main()
+
+
+def compute_true_AUC(model):
+	pass

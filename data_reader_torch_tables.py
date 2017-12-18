@@ -51,6 +51,10 @@ class data_reader(object):
 		#self.num_valid_ratings_subset = self.num_valid_ratings
 		#self.num_test_ratings_subset = self.num_test_ratings
 
+		self.data_dicts = self.load_data(self.data_fn_root + "_data_dicts.json")
+
+		self.user_item_dict = self.load_data(self.data_fn_root + "_user_item_dict.json")
+
 
 	def load_data(self, filename):
 		# Load dataset and decoding dictionaries
@@ -80,7 +84,7 @@ class data_reader(object):
 				subset_size += 1
 		return subset_size
 
-	def data_gen(self, batch_size, train_valid_test, num_previous_items, use_masking, use_gpu):
+	def data_gen(self, batch_size, train_valid_test, num_previous_items, use_masking, use_gpu, distractor_type = "not next"):
 		# A generator for batches for the model.
 		# A datapoint has the format [ith_item_purchased, i-1th_item_purchased, ..., user, candidate next item 1, candidate next item 2]
 		# Where one of the candidate next items is the real next item that the user purchased and the other is an item drawn randomly from the set of all items \ the real next item
@@ -91,12 +95,15 @@ class data_reader(object):
 		if train_valid_test == "train":
 			data_table = self.train_data
 			subset_size = self.train_subset_size
+			user_seen_set = [self.data_dicts[0]]
 		elif train_valid_test == "valid":
 			data_table = self.valid_data
 			subset_size = self.valid_subset_size
+			user_seen_set = self.data_dicts[0:1]
 		elif train_valid_test == "test":
 			data_table = self.test_data
 			subset_size = self.test_subset_size
+			user_seen_set = self.data_dicts[0:2]
 		num_ratings = len(data_table)
 		print(train_valid_test, " dataset has " , num_ratings, " ratings")
 		#items_list = [list(self.item_id_dict.keys())
@@ -166,8 +173,14 @@ class data_reader(object):
 						cur_prev_item = int(item)
 						prev_items_infos.append(cur_prev_item)
 					"""
-
-					#Pick a random item for the contrast proportionally to the frequency of purchase (to speed up training since more frequent items are more difficult)
+					#print(user_seen_set)
+					if distractor_type == "not next":
+						invalid_distractors = set([next_item])
+					elif distractor_type == "transrec":
+						invalid_distractors_list = []
+						for s in user_seen_set:
+							invalid_distractors_list.extend(s[str(user_info)])
+						invalid_distractors = set(invalid_distractors_list)
 					while True: #To make sure it is not the identical item...
 						#distractor_item_key = np.random.randint(self.num_items)
 						#distractor_item = int(items_list[distractor_item_key])
@@ -176,7 +189,8 @@ class data_reader(object):
 						#print("Old distractor item: ", distractor_item)
 						distractor_item = np.random.randint(self.num_items)
 						#print("New distractor item: ", distractor_item)
-						if distractor_item != next_item:
+						
+						if str(distractor_item) not in invalid_distractors:
 							break
 
 
@@ -230,3 +244,252 @@ class data_reader(object):
 					else:
 						yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]
 
+
+	def data_gen_userwise(self, batch_size, train_valid_test, num_previous_items, use_masking, use_gpu):
+		# A generator for batches for the model.
+		# A datapoint has the format [ith_item_purchased, i-1th_item_purchased, ..., user, candidate next item 1, candidate next item 2]
+		# Where one of the candidate next items is the real next item that the user purchased and the other is an item drawn randomly from the set of all items \ the real next item
+		# The distractor item can be an item that the user has never seen, an item they purchased previously, an item that they will purchase later, or even the current item (repeats are allowed)
+		
+		#The target is a number, either -1 or 1 that represents which item was the true next purchase. If the first item is the next purchase, the target is -1, otherwise it is 1.
+		
+		if train_valid_test == "train":
+			data_table = self.data_dicts[0]
+			subset_size = self.train_subset_size+3
+			user_seen_index = -3
+		elif train_valid_test == "valid":
+			data_table = self.data_dicts[1]
+			subset_size = self.valid_subset_size+2
+			user_seen_index = -2
+		elif train_valid_test == "test":
+			data_table = self.data_dicts[2]
+			subset_size = self.test_subset_size+1
+			user_seen_index = -1
+		num_ratings = len(data_table)
+		print(train_valid_test, " dataset has " , num_ratings, " ratings")
+		#items_list = [list(self.item_id_dict.keys())
+
+
+		sun_will_rise_tomorrow = True #Assumption
+		while sun_will_rise_tomorrow:
+
+
+			cur_batch_size = batch_size
+
+			batch_user_inputs = []
+			batch_prev_item_inputs_list = []
+			batch_prev_item_masks_list = []
+			for i in range(num_previous_items):
+				batch_prev_item_inputs_list.append([])
+				batch_prev_item_masks_list.append([])
+			batch_left_cand_inputs = []
+			batch_right_cand_inputs = []
+			
+			targets = np.zeros([cur_batch_size, 1])
+
+			for datapoint in range(cur_batch_size):
+
+				#Pick a random row from the dataframe
+
+				#cur_row_index = epoch_order[cur_position]
+				#cur_row = data_table[cur_row_index]
+
+				while True:
+					user_info = np.random.randint(self.num_users)
+					cur_user_items = self.user_item_dict[str(user_info)]
+					cur_user_len = len(cur_user_items)
+					if cur_user_len >= subset_size:
+						break
+
+				if train_valid_test == "train":
+					next_item_index = np.random.randint(self.train_subset_size, cur_user_len-2)
+				elif train_valid_test == "valid":
+					next_item_index = -2
+				elif train_valid_test == "test":
+					next_item_index = -1
+
+
+				next_item = int(cur_user_items[next_item_index])
+				
+
+				prev_items_infos = []
+				prev_item_observed_mask = []
+				for j in range(num_previous_items): #The order here is n-1th, n-2th, n-3th, etc.
+					try:
+						cur_prev_item = int(cur_user_items[next_item_index-1])
+						cur_mask_val = 1
+					except:
+						cur_prev_item = self.num_items #special number representing no input
+						cur_mask_val = 0
+
+					prev_items_infos.append(cur_prev_item)
+					prev_item_observed_mask.append(cur_mask_val)
+
+
+				#invalid_distractors_list = []
+				#for s in user_seen_set:
+				#	invalid_distractors_list.extend(s[str(user_info)])
+				invalid_distractors = set(cur_user_items[:user_seen_index])
+				while True: #To make sure it is not the identical item...
+					distractor_item = np.random.randint(self.num_items)					
+					if str(distractor_item) not in invalid_distractors:
+						break
+
+				left_item_info = next_item
+				right_item_info = distractor_item
+				targets[datapoint,0] = 1 #True next item is on the left
+
+
+				batch_user_inputs.append(user_info)
+
+				[batch_prev_item_inputs_list[index].append(x) for index, x in enumerate(prev_items_infos)]
+				if use_masking:
+					[batch_prev_item_masks_list[index].append(x) for index, x in enumerate(prev_item_observed_mask)]
+				batch_left_cand_inputs.append(left_item_info)
+				batch_right_cand_inputs.append(right_item_info)
+
+
+			if use_gpu:
+				user_inputs_var = Variable(torch.LongTensor(batch_user_inputs)).cuda()
+				left_cand_item_inputs_var = Variable(torch.LongTensor(batch_left_cand_inputs)).cuda()
+				right_cand_item_inputs_var = Variable(torch.LongTensor(batch_right_cand_inputs)).cuda()
+				prev_items_inputs_vars = [Variable(torch.LongTensor(prev_item_input)).cuda() for prev_item_input in batch_prev_item_inputs_list]
+				targets_var = Variable(torch.FloatTensor(targets), requires_grad=False).cuda()
+				if use_masking:
+					prev_items_masks_vars = [Variable(torch.FloatTensor(prev_item_mask)).cuda() for prev_item_mask in batch_prev_item_masks_list]
+					yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars + prev_items_masks_vars, targets_var]
+				else:
+					yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]
+			else:
+				user_inputs_var = Variable(torch.LongTensor(batch_user_inputs))
+				left_cand_item_inputs_var = Variable(torch.LongTensor(batch_left_cand_inputs))
+				right_cand_item_inputs_var = Variable(torch.LongTensor(batch_right_cand_inputs))
+				prev_items_inputs_vars = [Variable(torch.LongTensor(prev_item_input)) for prev_item_input in batch_prev_item_inputs_list]
+				targets_var = Variable(torch.FloatTensor(targets), requires_grad=False)
+				if use_masking:
+					prev_items_masks_vars = [Variable(torch.FloatTensor(prev_item_mask)) for prev_item_mask in batch_prev_item_masks_list]
+					yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars + prev_items_masks_vars, targets_var]
+				else:
+					yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]
+
+
+	def sample_for_true_AUC(self, batch_size, num_previous_items, use_masking, use_gpu):
+		#For each item in the test set, compare with all other items other than the ones the user has previously seen. 
+		#Make sure to ignore users with fewer than 3 total observations
+
+
+		data_table = self.test_data
+		subset_size = self.test_subset_size
+		user_seen_set = self.data_dicts[0:2]
+		num_ratings = len(data_table)
+		print(train_valid_test, " dataset has " , num_ratings, " ratings")
+
+		if subset_size:
+			subset_indices = self.create_subset_index(data_table, subset_size)
+			num_applicable_ratings = len(subset_indices)
+		else:
+			subset_indices = range(num_ratings)
+			num_applicable_ratings = num_ratings
+
+		sun_will_rise_tomorrow = True #Assumption
+		while sun_will_rise_tomorrow:
+
+			epoch_order = subset_indices
+
+			for u in epoch_order:
+				for distractor in range(self.num_items):
+					pass
+			cur_position = 0
+			while cur_position < num_applicable_ratings:
+
+				if num_applicable_ratings-cur_position>batch_size:
+					cur_batch_size = batch_size
+				else:
+					cur_batch_size = num_applicable_ratings-cur_position
+
+				batch_user_inputs = []
+				batch_prev_item_inputs_list = []
+				batch_prev_item_masks_list = []
+				for i in range(num_previous_items):
+					batch_prev_item_inputs_list.append([])
+					batch_prev_item_masks_list.append([])
+				batch_left_cand_inputs = []
+				batch_right_cand_inputs = []
+				
+				targets = np.zeros([cur_batch_size, 1])
+
+				for datapoint in range(cur_batch_size):
+
+					#Pick a random row from the dataframe
+
+					cur_row_index = epoch_order[cur_position]
+					cur_row = data_table[cur_row_index]
+
+					user_info = int(cur_row[0])
+
+					next_item = int(cur_row[1])
+
+					prev_items_infos = []
+					prev_item_observed_mask = []
+					for j in range(num_previous_items): #The order here is n-1th, n-2th, n-3th, etc.
+						if cur_row[j+2] is not None:
+							cur_prev_item = int(cur_row[j+2])
+							cur_mask_val = 1
+						else:
+							cur_prev_item = self.num_items #special number representing no input
+							cur_mask_val = 0
+						prev_items_infos.append(cur_prev_item)
+						prev_item_observed_mask.append(cur_mask_val)
+
+
+					invalid_distractors_list = []
+					for s in user_seen_set:
+						invalid_distractors_list.extend(s[str(user_info)])
+					invalid_distractors = set(invalid_distractors_list)
+					while True: #To make sure it is not the identical item...
+
+						distractor_item = np.random.randint(self.num_items)
+						#print("New distractor item: ", distractor_item)
+						
+						if str(distractor_item) not in invalid_distractors:
+							break
+
+
+					left_item_info = next_item
+					right_item_info = distractor_item
+					targets[datapoint,0] = 1 #True next item is on the left
+
+
+					batch_user_inputs.append(user_info)
+
+					[batch_prev_item_inputs_list[index].append(x) for index, x in enumerate(prev_items_infos)]
+					if use_masking:
+						[batch_prev_item_masks_list[index].append(x) for index, x in enumerate(prev_item_observed_mask)]
+					batch_left_cand_inputs.append(left_item_info)
+					batch_right_cand_inputs.append(right_item_info)
+
+					cur_position += 1
+
+
+				if use_gpu:
+					user_inputs_var = Variable(torch.LongTensor(batch_user_inputs)).cuda()
+					left_cand_item_inputs_var = Variable(torch.LongTensor(batch_left_cand_inputs)).cuda()
+					right_cand_item_inputs_var = Variable(torch.LongTensor(batch_right_cand_inputs)).cuda()
+					prev_items_inputs_vars = [Variable(torch.LongTensor(prev_item_input)).cuda() for prev_item_input in batch_prev_item_inputs_list]
+					targets_var = Variable(torch.FloatTensor(targets), requires_grad=False).cuda()
+					if use_masking:
+						prev_items_masks_vars = [Variable(torch.FloatTensor(prev_item_mask)).cuda() for prev_item_mask in batch_prev_item_masks_list]
+						yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars + prev_items_masks_vars, targets_var]
+					else:
+						yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]
+				else:
+					user_inputs_var = Variable(torch.LongTensor(batch_user_inputs))
+					left_cand_item_inputs_var = Variable(torch.LongTensor(batch_left_cand_inputs))
+					right_cand_item_inputs_var = Variable(torch.LongTensor(batch_right_cand_inputs))
+					prev_items_inputs_vars = [Variable(torch.LongTensor(prev_item_input)) for prev_item_input in batch_prev_item_inputs_list]
+					targets_var = Variable(torch.FloatTensor(targets), requires_grad=False)
+					if use_masking:
+						prev_items_masks_vars = [Variable(torch.FloatTensor(prev_item_mask)) for prev_item_mask in batch_prev_item_masks_list]
+						yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars + prev_items_masks_vars, targets_var]
+					else:
+						yield [[user_inputs_var] + [left_cand_item_inputs_var] + [right_cand_item_inputs_var] + prev_items_inputs_vars, targets_var]

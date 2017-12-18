@@ -20,10 +20,14 @@ header = False #Needed for beeradvocate dataset
 save_filename = "data/googlelocal/data_tables_split_80_10_10_"
 split_ratio = [0.8,0.1,0.1] #Not relevant in transrec mode
 n = 10 #Number of previous items to include in each table entry (linearly increases the size of the table)
-min_num_ratings = 5
-filter_type = "just_items" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
+min_num_ratings = 4
+filter_type = "concurrent" #"concurrent" "user-first" "item-first" "just_users" "just_items" "max_k-core"
 use_overlapping_intervals = True #Not relevant in transrec mode
 splittype = "transrec"  # "percentage" or "transrec"
+
+
+
+
 
 save_filename += filter_type
 save_filename += "filter"
@@ -294,6 +298,19 @@ with open(save_filename+"_valid.json", "w") as f:
 	json.dump(valid_table, f)
 with open(save_filename+"_test.json", "w") as f:
 	json.dump(test_table, f)
+
+"""with open(save_filename+"_train_dict.json", "w") as f:
+	json.dump(train_dict, f)
+with open(save_filename+"_valid_dict.json", "w") as f:
+	json.dump(valid_dict, f)
+with open(save_filename+"_test_dict.json", "w") as f:
+	json.dump(test_dict, f)
+"""
+with open(save_filename+"_data_dicts.json", "w") as f:
+	json.dump([train_dict, valid_dict, test_dict], f)
+
+with open(save_filename+"_user_item_dict.json", "w") as f:
+	json.dump(user_item_dict, f)
 
 
 #Save metadata
